@@ -353,7 +353,7 @@
       </div>
       <div class="display" id="display">
         <div class="display-mode" id="display-mode">倒计时</div>
-        <div class="display-label" id="display-label">— 输入时长后开始 —</div>
+        <div class="display-label" id="display-label"></div>
         <div class="display-time idle" id="display-time">00:00:00</div>
         <div class="display-overtime" id="display-overtime" style="display:none">⏱ 已超时 00:00</div>
         <div class="display-actual" id="display-actual" style="display:none">实际用时 00:00</div>
@@ -1034,13 +1034,7 @@
       State.countdown.running = false;
       State.countdown.finished = false;
     }
-    // 隔离：任务组未运行才清空基础倒计时状态
-    if (newMode === 'tasks' && !State.group.active) {
-      State.countdown.remaining = 0;
-      State.countdown.duration = 0;
-      State.countdown.finished = false;
-      State.countdown.running = false;
-    }
+    // 切到 tasks tab 不再清空 cd 状态（cd 与 group 完全独立，可同时跑）
     render();
   }
 
@@ -1216,18 +1210,18 @@
       modeEl.textContent = '倒计时';
       if (State.countdown.running) labelEl.textContent = '— 进行中 —';
       else if (State.countdown.remaining > 0 && State.countdown.remaining < State.countdown.duration) labelEl.textContent = '— 暂停中 —';
-      else labelEl.textContent = '— 输入时长后开始 —';
+      else labelEl.textContent = '';  // idle: 不显示提示，更简洁
       renderCountdownTime(timeEl, labelEl, progress, progressBar, false);
       actualEl.style.display = 'none';
     }
     // ====== 秒表模式 ======
     else if (State.mode === 'stopwatch') {
       modeEl.textContent = '秒表';
-    if (State.stopwatch.running) labelEl.textContent = '— 进行中 —';
-    else if (State.stopwatch.elapsed > 0) labelEl.textContent = '— 暂停中 —';
-    else labelEl.textContent = '—';
-  
-    timeEl.innerHTML = fmtTimeMs(getStopwatchDisplayMs());
+      // 秒表 label 二态：运行中 / 暂停中（idle 不显示，更简洁）
+      if (State.stopwatch.running) labelEl.textContent = '— 进行中 —';
+      else if (State.stopwatch.elapsed > 0) labelEl.textContent = '— 暂停中 —';
+      else labelEl.textContent = '';
+      timeEl.innerHTML = fmtTimeMs(getStopwatchDisplayMs());
       // 秒表暂停时加 .paused 触发呼吸
       const swBaseCls = 'display-time';
       timeEl.className = (!State.stopwatch.running && State.stopwatch.elapsed > 0) ? swBaseCls + ' paused' : swBaseCls;
@@ -1396,15 +1390,17 @@
       prevBtn.disabled = State.group.currentIndex <= 0;
       const isLast = State.group.currentIndex >= State.group.tasks.length - 1;
       if (isLast) {
-        nextBtn.textContent = '⏹ 完成';
+        // 末段：按钮置灰（保留位置，不让用户误以为功能消失）
+        nextBtn.textContent = '⏭ 下一项';
         nextBtn.classList.remove('btn-warn');
         nextBtn.classList.add('btn-secondary');
+        nextBtn.disabled = true;
       } else {
         nextBtn.textContent = '⏭ 下一项';
         nextBtn.classList.remove('btn-warn');
         nextBtn.classList.add('btn-secondary');
+        nextBtn.disabled = false;
       }
-      nextBtn.disabled = false;
       stopBtn.style.display = 'inline-flex';
     } else {
       // 未运行
@@ -1583,6 +1579,9 @@
     const g = State.groups.find(x => x.id === groupId);
     if (!g || !g.tasks.length) { toast('请先添加子任务', 'warn'); return; }
     if (State.mode !== 'tasks') State.mode = 'tasks';
+    // 检测"重新开始"：从非 active 状态启动 → 清空所有 actualTimes 从头计时（防止上次累计污染）
+    // 必须在设 State.group.active = true 之前判定
+    const isRestart = !State.group.active;
     State.group.active = true;
     State.group.groupId = g.id;
     State.group.tasks = g.tasks;  // 引用，编辑后实时生效
@@ -1594,8 +1593,12 @@
     }
     State.group.currentIndex = startIdx;
     State.group.overtime = false;
-    // 前面 task 的累计清空（已经被跳过的）
-    g.tasks.forEach((t, i) => { if (i < startIdx) delete State.actualTimes[t.id]; });
+    if (isRestart) {
+      g.tasks.forEach(t => { delete State.actualTimes[t.id]; });
+    } else {
+      // 正常启动：前面 task 的累计清空（被跳过的）
+      g.tasks.forEach((t, i) => { if (i < startIdx) delete State.actualTimes[t.id]; });
+    }
     const startTask = State.group.tasks[startIdx];
     State.activeTaskId = startTask.id;
     // 不动 State.countdown（保持普通倒计时独立）
@@ -1664,8 +1667,8 @@
     }
     const isLast = State.group.currentIndex >= State.group.tasks.length - 1;
     if (isLast) {
-      // 最后一项：完成全部
-      onGroupComplete();
+      // 末段：与 stop 按钮功能一致（"结束全部"按钮）
+      stopGroup();
       return;
     }
     const nextIdx = State.group.currentIndex + 1;
@@ -2009,17 +2012,17 @@
 
 模式：
   倒计时 
-  秒表    
-  任务   - 按序执行多个倒计时
+  秒表   
+  任务   按序执行一系列倒计时
 
 快捷键：
   F / F11      - 全屏
   空格         - 开始 / 暂停
-  L            - 秒表分段
-  1 / 2 / 3    - 切换模式（倒计时/秒表/任务）
-  \\           - 展开/收起边栏
+  L              - 秒表分段
+  \\              - 展开/收起边栏
 
-  任务组中：
+  1 / 2 / 3    - 切换模式（倒计时/秒表/任务）
+
   ← / Home / P  - 上一项
   → / End / N   - 下一项
   ↑ / PageUp    - 上个任务组（循环）
