@@ -1,0 +1,2585 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#0a0a0a">
+  <title>计时器</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%E2%8F%B1%EF%B8%8F%3C/text%3E%3C/svg%3E">
+  <style>
+    /* ===== 基础 ===== */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; overflow: hidden; }
+    button { font: inherit; color: inherit; background: none; border: none; cursor: pointer; }
+    input { font: inherit; color: inherit; background: none; border: none; outline: none; }
+
+    :root {
+      --mono: 'SF Mono', 'Cascadia Code', 'Consolas', 'Segoe UI Mono', 'JetBrains Mono', monospace;
+      --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+    }
+
+    /* Light mode (default if user prefers light) */
+    :root, [data-theme="light"] {
+      --bg: #f7f7f9;
+      --bg-elev: #ffffff;
+      --bg-elev-2: #ececef;
+      --bg-pattern: #fafafc;
+      --border: #dcdce0;
+      --border-strong: #c8c8ce;
+      --text: #1c1c1e;
+      --text-dim: #5c5c63;
+      --text-faint: #9a9aa0;
+      --accent: #007aff;
+      --accent-dim: #d6e7ff;
+      --accent-text: #ffffff;
+      --on-accent-dim: #007aff;
+      --warn: #ff9500;
+      --success: #34c759;
+      --danger: #ff3b30;
+      --overtime: #ff3b30;
+      --overtime-bg: #fff1ef;
+      --group-running: #34c759;
+      --group-active: #007aff;
+      --laps-bar: #007aff;
+      --laps-bar-bg: #e5e5ea;
+      --shadow: 0 1px 3px rgba(0,0,0,0.06);
+      --hover-overlay: rgba(0,0,0,0.04);
+    }
+
+    /* Dark mode */
+    [data-theme="dark"] {
+      --bg: #0a0a0c;
+      --bg-elev: #14141a;
+      --bg-elev-2: #1c1c25;
+      --bg-pattern: #11131a;
+      --border: #2a2a35;
+      --border-strong: #3a3a45;
+      --text: #f0f0f3;
+      --text-dim: #8a8a96;
+      --text-faint: #4a4a55;
+      --accent: #4f9eff;
+      --accent-dim: #2d5d99;
+      --accent-text: #ffffff;
+      --on-accent-dim: #ffffff;
+      --warn: #ff6b4a;
+      --success: #4ade80;
+      --danger: #ff6b6b;
+      --overtime: #ff6b6b;
+      --overtime-bg: #2a1a1a;
+      --group-running: #4ade80;
+      --group-active: #4f9eff;
+      --laps-bar: #4f9eff;
+      --laps-bar-bg: #2a2a35;
+      --shadow: 0 1px 3px rgba(0,0,0,0.4);
+      --hover-overlay: rgba(255,255,255,0.04);
+    }
+
+    body {
+      font-family: var(--sans);
+      background: var(--bg);
+      color: var(--text);
+      display: grid;
+      grid-template-rows: auto 1fr;
+      user-select: none;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ===== 顶部栏 ===== */
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 24px;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg-elev);
+    }
+    .clock { display: flex; align-items: baseline; gap: 14px; font-family: var(--mono); }
+    .clock-time { font-size: 16px; font-weight: 500; letter-spacing: 0.5px; }
+    .clock-date { font-size: 12px; color: var(--text-dim); }
+    .tabs { display: flex; gap: 4px; }
+    .tab { padding: 8px 16px; font-size: 13px; color: var(--text-dim); border-radius: 6px; transition: all 0.15s; }
+    .tab:hover { color: var(--text); background: var(--bg-elev-2); }
+    .tab.active { color: var(--text); background: var(--bg-elev-2); }
+    .actions { display: flex; gap: 4px; }
+    .icon-btn { width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; border-radius: 6px; color: var(--text-dim); transition: all 0.15s; font-size: 14px; }
+    .icon-btn:hover { color: var(--text); background: var(--bg-elev-2); }
+
+    /* ===== 主体 ===== */
+    .main {
+      display: grid;
+      grid-template-columns: 0 1fr 280px;
+      height: 100%;
+      min-height: 0;
+      transition: grid-template-columns 0.2s;
+      grid-template-columns: 1fr 320px;
+    }
+    .main.has-group { grid-template-columns: 1fr 320px; }
+    .main.right-collapsed { grid-template-columns: 1fr 0 !important; transition: grid-template-columns 0.2s; }
+    .main.right-collapsed .panel-right { display: none; }
+    .panel { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--border); }
+    .panel:last-child { border-right: none; border-left: 1px solid var(--border); }
+    .panel-center { display: flex; flex-direction: column; align-items: center; justify-content: center; background: var(--bg); position: relative; overflow: hidden; }
+    .panel-header { padding: 14px 18px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 1.2px; color: var(--text-dim); border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
+    .panel-body { flex: 1; overflow-y: auto; padding: 8px; }
+    .panel-body::-webkit-scrollbar { width: 6px; }
+    .panel-body::-webkit-scrollbar-track { background: transparent; }
+    .panel-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+    /* ===== 主显示区 ===== */
+    .display { text-align: center; width: 100%; max-width: 900px; padding: 0 40px; }
+    .display-mode { font-size: 11px; font-weight: 600; letter-spacing: 3px; color: var(--text-faint); text-transform: uppercase; margin-bottom: 8px; }
+    .display-label { font-size: 16px; color: var(--text-dim); margin-bottom: 16px; min-height: 24px; transition: opacity 0.2s; }
+    .display-time { font-family: var(--mono); font-size: clamp(48px, 12vh, 130px); font-weight: 300; letter-spacing: -2px; line-height: 1; color: var(--text); font-variant-numeric: tabular-nums; transition: color 0.3s; }
+    .display-time .ms { color: var(--text-dim); font-size: 0.5em; }
+    .display-time.warn { color: var(--warn); }
+    .display-time.done { color: var(--warn); animation: pulse 1s infinite; }
+    .display-time.idle { color: var(--text-faint); }
+    /* 暂停时呼吸效果（所有页面的暂停都生效） */
+    @keyframes paused-breathe {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.2; }
+    }
+    .display-time.paused { animation: paused-breathe 2.0s ease-in-out infinite; }
+    .display-time.overtime-running { color: var(--warn); animation: pulse 1.2s infinite; }
+
+    .display-overtime { margin-top: 8px; font-family: var(--mono); font-size: 18px; color: var(--warn); font-weight: 500; letter-spacing: 1px; animation: pulse 1.2s infinite; }
+
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+    .progress { width: 100%; max-width: 900px; height: 4px; background: var(--bg-elev-2); border-radius: 2px; margin: 20px auto 0; overflow: hidden; }
+    .progress-bar { height: 100%; background: var(--accent); width: 0%; transition: width 0.5s linear; border-radius: 2px; }
+
+    .group-progress { margin-top: 16px; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+    .group-pills { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; }
+    .group-pill { padding: 4px 10px; font-size: 11px; border-radius: 10px; background: var(--bg-elev-2); color: var(--text-dim); border: 1px solid transparent; cursor: pointer; transition: all 0.15s; }
+    .group-pill:hover { color: var(--text); background: var(--bg-elev); }
+    .group-pill.active { background: var(--accent-dim); color: var(--on-accent-dim); border-color: var(--accent); font-weight: 600; }
+    .group-pill.live-elapsed { color: var(--text-faint); }
+
+    .group-banner { position: absolute; top: 16px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 8px; padding: 6px 14px; font-size: 12px; font-weight: 500; background: var(--bg-elev-2); color: var(--text); border: 1px solid var(--border); border-radius: 20px; opacity: 0; transition: opacity 0.3s, transform 0.15s; max-width: 80%; cursor: pointer; }
+    .group-banner.show { opacity: 1; }
+    .group-banner.show:hover { background: var(--warn); color: #fff; border-color: var(--warn); transform: translateX(-50%) translateY(-1px); }
+    .banner-tag { padding: 2px 8px; font-size: 10px; font-weight: 600; letter-spacing: 1.5px; text-transform: uppercase; background: var(--warn); color: #fff; border-radius: 8px; flex-shrink: 0; }
+    .banner-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .banner-status { padding: 2px 8px; font-size: 10px; font-weight: 600; border-radius: 8px; background: transparent; color: var(--text-dim); border: 1px solid var(--border); flex-shrink: 0; }
+    .banner-status.running { color: var(--accent); border-color: var(--accent); }
+    .banner-status.paused { color: var(--warn); border-color: var(--warn); }
+
+    .display-actual { margin-top: 12px; font-family: var(--mono); font-size: 14px; color: var(--text-dim); letter-spacing: 0.5px; }
+    .display-actual.live { color: var(--accent); }
+    .display-actual.overtime-val { color: var(--warn); }
+
+    /* ===== 控制按钮 ===== */
+    .controls { display: flex; gap: 12px; margin-top: 24px; align-items: center; flex-wrap: wrap; justify-content: center; }
+    .btn { padding: 12px 24px; font-size: 14px; font-weight: 500; border-radius: 8px; transition: all 0.15s; display: flex; align-items: center; gap: 6px; }
+    .btn-primary { background: var(--accent); color: #fff; min-width: 100px; justify-content: center; }
+    .btn-primary:hover { background: #6aafff; }
+    .btn-primary.running { background: var(--bg-elev-2); color: var(--text); }
+    .btn-primary.running:hover { background: var(--border); }
+    .btn-secondary { background: var(--bg-elev-2); color: var(--text); }
+    .btn-secondary:hover { background: var(--border); }
+    .btn-warn { background: var(--warn); color: #fff; }
+    .btn-warn:hover { background: #ff8568; }
+    .btn-lap { background: var(--accent-dim); color: var(--on-accent-dim); padding: 12px 20px; border-radius: 8px; font-size: 14px; font-weight: 600; transition: all 0.15s; display: flex; align-items: center; gap: 6px; border: 1px solid var(--accent); }
+    .btn-lap:hover:not(:disabled) { background: var(--accent); color: var(--accent-text); }
+    .btn-lap:disabled { opacity: 0.4; cursor: not-allowed; }
+    .btn-icon { width: 44px; padding: 0; justify-content: center; font-size: 18px; }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    .time-input { display: flex; align-items: center; justify-content: center; gap: 8px; margin: 20px auto 0; padding: 12px 18px; background: var(--bg-elev); border: 1px solid var(--border); border-radius: 10px; font-family: var(--mono); font-size: 18px; color: var(--text-dim); width: 100%; max-width: 320px; }
+    .time-cell { position: relative; }
+    .time-input input { width: 72px; text-align: center; font-size: 18px; padding: 8px 22px 8px 4px; background: var(--bg-elev-2); border-radius: 6px; color: var(--text); font-variant-numeric: tabular-nums; }
+    .time-input input:focus { background: var(--border); }
+    .time-unit { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); font-size: 11px; color: var(--text-faint); pointer-events: none; user-select: none; }
+    .time-input .sep { color: var(--text-faint); }
+    .time-input label { font-size: 11px; margin-right: 6px; color: var(--text-dim); }
+
+    /* ===== 任务组列表 ===== */
+    .group-list { display: flex; flex-direction: column; gap: 8px; }
+    .group-item { background: var(--bg-elev); border: 1px solid transparent; border-radius: 8px; overflow: hidden; transition: all 0.15s; }
+    .group-item:hover { background: var(--bg-elev-2); border-color: var(--border); }
+    .group-item.active { border-color: var(--accent); }
+    .group-item.running { border-color: var(--warn); }
+
+    .group-head { padding: 10px 12px; display: flex; flex-direction: column; gap: 4px; cursor: pointer; }
+    .group-head-row1 { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .group-name { font-size: 13px; font-weight: 600; color: var(--text); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .group-stats { font-family: var(--mono); font-size: 11px; color: var(--text-faint); flex-shrink: 0; }
+    .group-head-row2 { display: flex; gap: 4px; opacity: 0; transition: opacity 0.15s; }
+    .group-item:hover .group-head-row2 { opacity: 1; }
+    .group-item.running .group-head-row2 { opacity: 1; }
+    .group-mini-btn { padding: 2px 8px; font-size: 10px; color: var(--text-faint); border-radius: 3px; transition: all 0.15s; }
+    .group-mini-btn:hover { color: var(--text); background: var(--bg); }
+    .group-mini-btn.danger { color: var(--danger); }
+    .group-mini-btn.danger:hover { background: var(--danger); color: #fff; }
+    .group-mini-btn.primary-mini { color: var(--accent); }
+    .group-mini-btn.primary-mini:hover { background: var(--accent); color: #fff; }
+
+    .group-tasks { border-top: 1px solid var(--border); }
+    .group-task { padding: 8px 12px; display: flex; align-items: center; justify-content: space-between; gap: 8px; cursor: pointer; transition: background 0.1s; border-left: 2px solid transparent; }
+    .group-task:hover { background: var(--bg-elev-2); }
+    .group-task.current { background: var(--bg-elev-2); border-left-color: var(--warn); }
+    .group-task.done { opacity: 0.6; }
+    .group-task-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+    .group-task-std { font-family: var(--mono); font-size: 11px; color: var(--text-faint); }
+    .group-task-std-badge { display: inline-flex; align-items: center; gap: 4px; align-self: flex-start; padding: 2px 7px; background: var(--accent-dim); color: var(--accent); border-radius: 4px; font-family: var(--mono); font-size: 10px; font-weight: 600; letter-spacing: 0.3px; }
+    .group-task-std-badge::before { content: '⏱'; font-size: 9px; }
+    .group-task-name { font-size: 12px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .group-task-std { font-family: var(--mono); font-size: 11px; color: var(--text-faint); }
+    .group-task-actual { font-family: var(--mono); font-size: 13px; color: var(--text); font-weight: 600; }
+    .group-task-actual.live { color: var(--accent); }
+    .group-task-actual.overtime-val { color: var(--warn); }
+    .group-task-actual.faster { color: var(--success); }
+    .group-task-actual.slower { color: var(--warn); }
+
+    .group-task-actions { display: flex; gap: 2px; opacity: 0; transition: opacity 0.15s; }
+    .group-task:hover .group-task-actions { opacity: 1; }
+    .task-mini { padding: 1px 5px; font-size: 10px; color: var(--text-faint); border-radius: 3px; }
+    .task-mini:hover { color: var(--text); background: var(--bg); }
+    .task-mini.danger { color: var(--danger); }
+    .task-mini.danger:hover { background: var(--danger); color: #fff; }
+
+    .add-task-row { padding: 6px 12px; font-size: 11px; color: var(--text-faint); border-top: 1px solid var(--border); cursor: pointer; transition: all 0.15s; }
+    .add-task-row:hover { color: var(--accent); background: var(--bg-elev-2); }
+
+    .group-empty { text-align: center; padding: 40px 20px; color: var(--text-faint); font-size: 12px; line-height: 1.6; }
+
+    .add-group-btn { width: 100%; padding: 10px; font-size: 12px; color: var(--text-dim); border: 1px dashed var(--border); border-radius: 6px; margin-top: 8px; transition: all 0.15s; }
+    .add-group-btn:hover { color: var(--text); border-color: var(--text-dim); background: var(--bg-elev); }
+
+    .group-summary { margin-top: 8px; padding: 10px 12px; border-top: 1px solid var(--border); border-radius: 0 0 8px 8px; background: var(--bg-elev-2); display: flex; flex-direction: column; gap: 4px; }
+    .summary-row { display: flex; justify-content: space-between; align-items: center; font-size: 11px; }
+    .summary-label { color: var(--text-faint); }
+    .summary-value { font-family: var(--mono); color: var(--text); }
+    .summary-value.diff-over { color: var(--warn); }
+    .summary-value.diff-under { color: var(--success); }
+
+    /* ===== 右侧 ===== */
+    .section-title { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 1.2px; color: var(--text-faint); margin: 12px 4px 8px; }
+    .section-title:first-child { margin-top: 4px; }
+    .quick-times { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+    .quick-time-btn { padding: 10px; font-size: 12px; font-family: var(--mono); background: var(--bg-elev); color: var(--text-dim); border-radius: 6px; transition: all 0.15s; }
+    .quick-time-btn:hover { background: var(--bg-elev-2); color: var(--text); }
+    .custom-quick { margin-top: 10px; display: flex; align-items: center; gap: 6px; padding: 8px 10px; background: var(--bg-elev); border: 1px solid var(--border); border-radius: 8px; }
+    .custom-quick-label { font-size: 10px; color: var(--text-faint); letter-spacing: 1px; text-transform: uppercase; font-weight: 600; }
+    .custom-quick-input { width: 48px; padding: 4px; font-size: 13px; font-family: var(--mono); text-align: center; background: var(--bg-elev-2); color: var(--text); border-radius: 4px; font-variant-numeric: tabular-nums; }
+    .custom-quick-sep { color: var(--text-faint); font-size: 12px; }
+    .custom-quick-unit { font-size: 11px; color: var(--text-faint); }
+    .custom-quick-add { padding: 4px 10px; font-size: 12px; background: var(--accent); color: var(--accent-text); border-radius: 4px; font-weight: 500; }
+    .custom-quick-add:hover { opacity: 0.85; }
+    .custom-quick-list { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+    .export-panel { background: var(--bg-elev); border-radius: 6px; padding: 12px; }
+    .export-panel h4 { font-size: 12px; color: var(--text-dim); margin: 0 0 8px; font-weight: 500; }
+    .export-format-row { display: flex; gap: 6px; margin-bottom: 8px; }
+    .export-format-btn { flex: 1; padding: 6px; font-size: 11px; background: var(--bg-elev-2); color: var(--text-dim); border-radius: 4px; transition: all 0.15s; border: 1px solid transparent; }
+    .export-format-btn.active { background: var(--bg-elev-2); color: var(--text); border-color: var(--accent, #6cc4ff); }
+    .export-format-btn:hover { color: var(--text); }
+    .export-action-btn { width: 100%; padding: 8px; font-size: 12px; background: var(--accent); color: var(--accent-text); border-radius: 4px; font-weight: 500; transition: all 0.15s; }
+    .export-action-btn:hover { opacity: 0.85; }
+    .group-export-btn { background: var(--bg-elev-2); color: var(--text-dim); font-size: 11px; padding: 4px 8px; border-radius: 4px; opacity: 0; transition: all 0.15s; }
+    .group-item:hover .group-export-btn { opacity: 1; }
+    .group-export-btn:hover { color: var(--text); background: var(--bg-elev); }
+    .export-popover { position: fixed; background: var(--bg-elev); border: 1px solid var(--border-strong); border-radius: 8px; box-shadow: 0 6px 24px rgba(0,0,0,0.18); padding: 4px; z-index: 100; min-width: 140px; display: none; }
+    .export-popover.show { display: block; }
+    .export-popover-item { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 10px; font-size: 12px; color: var(--text); border-radius: 5px; text-align: left; transition: background 0.1s; }
+    .export-popover-item:hover { background: var(--bg-elev-2); }
+    .export-popover-item .ico { font-size: 14px; }
+
+    .info-row { display: flex; justify-content: space-between; align-items: center; padding: 6px 4px; font-size: 12px; }
+    .info-label { color: var(--text-dim); }
+    .info-value { font-family: var(--mono); color: var(--text); }
+
+    .laps { display: flex; flex-direction: column; gap: 4px; }
+    .lap-item { display: flex; justify-content: space-between; padding: 6px 10px; font-family: var(--mono); font-size: 11px; background: var(--bg-elev); border-radius: 4px; }
+    .lap-num { color: var(--text-faint); }
+    .lap-time { color: var(--text); }
+    .lap-delta { color: var(--text-dim); font-size: 10px; }
+
+    /* ===== 模态框 ===== */
+    .modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; opacity: 0; pointer-events: none; transition: opacity 0.2s; z-index: 9999; backdrop-filter: blur(4px); }
+    .modal-bg.show { opacity: 1; pointer-events: auto; }
+    .modal { background: var(--bg-elev); border: 1px solid var(--border); border-radius: 12px; padding: 24px; min-width: 360px; max-width: 90vw; transform: translateY(20px); transition: transform 0.2s; }
+    .modal-bg.show .modal { transform: translateY(0); }
+    .modal-title { font-size: 16px; font-weight: 600; margin-bottom: 20px; }
+    .form-row { margin-bottom: 16px; }
+    .form-label { display: block; font-size: 11px; color: var(--text-dim); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .form-input { width: 100%; padding: 10px 12px; font-size: 14px; background: var(--bg-elev-2); border: 1px solid var(--border); border-radius: 6px; color: var(--text); transition: border-color 0.15s; }
+    .form-input:focus { border-color: var(--accent); }
+    .form-time-row { display: flex; gap: 8px; align-items: center; font-family: var(--mono); }
+    .form-time-row input { flex: 1; text-align: center; }
+    .form-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 24px; }
+
+    /* ===== Toast ===== */
+    .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(20px); padding: 12px 20px; background: var(--bg-elev-2); border: 1px solid var(--border); border-radius: 8px; font-size: 13px; opacity: 0; pointer-events: none; transition: all 0.2s; z-index: 200; }
+    .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+    .toast.success { border-color: var(--success); }
+    .toast.warn { border-color: var(--warn); }
+
+    @media (max-width: 900px) {
+      .main, .main.has-group { grid-template-columns: 1fr; }
+      .panel-left { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <!-- ===== 顶部 ===== -->
+  <header class="topbar">
+    <div class="clock">
+      <span class="clock-time" id="clock-time">--:--:--</span>
+      <span class="clock-date" id="clock-date">----年--月--日 星期-</span>
+    </div>
+    <nav class="tabs">
+      <button class="tab active" data-tab="countdown">⏱ 倒计时</button>
+      <button class="tab" data-tab="stopwatch">⏲ 秒表</button>
+      <button class="tab" data-tab="tasks">📋 任务</button>
+    </nav>
+    <div class="actions">
+      <button class="icon-btn" id="btn-theme" title="切换主题">🌙</button>
+      <button class="icon-btn" id="btn-toggle-right" title="隐藏/显示右栏 (\\)">⮜</button>
+      <button class="icon-btn" id="btn-fullscreen" title="全屏 (F)">⛶</button>
+      <button class="icon-btn" id="btn-help" title="关于">?</button>
+    </div>
+  </header>
+
+  <!-- ===== 主体 ===== -->
+  <main class="main" id="main">
+    <!-- 中：主显示区 -->
+    <section class="panel-center">
+      <div class="group-banner" id="group-banner">
+        <span class="banner-tag">任务组</span>
+        <span class="banner-name" id="banner-name"></span>
+        <span class="banner-status" id="banner-status"></span>
+      </div>
+      <div class="display" id="display">
+        <div class="display-mode" id="display-mode">倒计时</div>
+        <div class="display-label" id="display-label">— 输入时长后开始 —</div>
+        <div class="display-time idle" id="display-time">00:00:00</div>
+        <div class="display-overtime" id="display-overtime" style="display:none">⏱ 已超时 00:00</div>
+        <div class="display-actual" id="display-actual" style="display:none">实际用时 00:00</div>
+        <div class="progress" id="progress" style="display:none">
+          <div class="progress-bar" id="progress-bar"></div>
+        </div>
+        <div class="group-progress" id="group-progress" style="display:none">
+          <div class="group-pills" id="group-pills"></div>
+        </div>
+
+        <!-- 倒计时输入（仅倒计时 tab） -->
+        <div class="time-input" id="time-input">
+          <label>设置</label>
+          <div class="time-cell">
+            <input type="number" id="in-h" min="0" max="99" value="0">
+            <span class="time-unit">时</span>
+          </div>
+          <span class="sep">:</span>
+          <div class="time-cell">
+            <input type="number" id="in-m" min="0" max="59" value="25">
+            <span class="time-unit">分</span>
+          </div>
+          <span class="sep">:</span>
+          <div class="time-cell">
+            <input type="number" id="in-s" min="0" max="59" value="0">
+            <span class="time-unit">秒</span>
+          </div>
+        </div>
+
+        <!-- 倒计时模式控件 -->
+        <div class="controls" id="controls-countdown" style="display:none">
+          <button class="btn btn-primary" id="btn-start">▶ 开始</button>
+          <button class="btn btn-secondary" id="btn-reset">⟲ 重置</button>
+        </div>
+
+        <!-- 秒表模式控件（分段突出） -->
+        <div class="controls" id="controls-stopwatch" style="display:none">
+          <button class="btn btn-primary" id="btn-start-sw">▶ 开始</button>
+          <button class="btn btn-lap" id="btn-lap" title="分段 (L)">
+            <span style="font-size:20px">⊕</span> 分段
+          </button>
+          <button class="btn btn-secondary" id="btn-reset-sw">⟲ 重置</button>
+        </div>
+
+        <!-- 任务组模式控件 -->
+        <div class="controls" id="controls-group" style="display:none">
+          <button class="btn btn-secondary" id="btn-prev-task" title="上一项" disabled>⏮ 上一项</button>
+          <button class="btn btn-primary" id="btn-start-grp" style="min-width:120px">▶ 开始</button>
+          <button class="btn btn-secondary" id="btn-next-task" title="下一项 (N)">⏭ 下一项</button>
+          <button class="btn btn-secondary" id="btn-stop-group" style="display:none">⏹ 结束全部</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- 右：操作 -->
+    <section class="panel panel-right">
+      <div class="panel-header"><span id="right-panel-title">控制</span></div>
+      <div class="panel-body">
+        <!-- 倒计时模式：快捷时长 -->
+        <div id="panel-countdown" style="display:none">
+          <div class="section-title">快捷时长</div>
+          <div class="quick-times" id="quick-times">
+            <button class="quick-time-btn" data-sec="30">0:30</button>
+            <button class="quick-time-btn" data-min="1">1:00</button>
+            <button class="quick-time-btn" data-min="2">2:00</button>
+            <button class="quick-time-btn" data-min="3">3:00</button>
+            <button class="quick-time-btn" data-min="4">4:00</button>
+            <button class="quick-time-btn" data-min="5">5:00</button>
+            <button class="quick-time-btn" data-min="10">10:00</button>
+            <button class="quick-time-btn" data-min="15">15:00</button>
+            <button class="quick-time-btn" data-min="25">25:00</button>
+            <button class="quick-time-btn" data-min="30">30:00</button>
+            <button class="quick-time-btn" data-min="45">45:00</button>
+            <button class="quick-time-btn" data-min="60">60:00</button>
+          </div>
+          <div class="custom-quick">
+            <span class="custom-quick-label">自定义</span>
+            <input type="number" id="custom-m" min="0" max="99" value="0" class="custom-quick-input">
+            <span class="custom-quick-sep">:</span>
+            <input type="number" id="custom-s" min="0" max="59" value="0" class="custom-quick-input">
+            <span class="custom-quick-unit">分:秒</span>
+            <button class="custom-quick-add" id="custom-add-btn">+ 添加</button>
+          </div>
+          <div class="custom-quick-list" id="custom-quick-list"></div>
+        </div>
+
+        <!-- 秒表模式：导出 + 分段记录 -->
+        <div id="panel-stopwatch" style="display:none">
+          <div class="export-panel">
+            <h4>导出数据</h4>
+            <div class="export-format-row" id="sw-format-row">
+              <button class="export-format-btn active" data-format="csv">CSV</button>
+              <button class="export-format-btn" data-format="xlsx">Excel</button>
+            </div>
+            <button class="export-action-btn" id="btn-export-sw">📥 导出分段数据</button>
+          </div>
+
+          <div class="section-title" style="margin-top:20px">分段记录</div>
+          <div class="laps" id="laps">
+            <div style="text-align:center;padding:20px;color:var(--text-faint);font-size:11px;">暂无记录</div>
+          </div>
+        </div>
+
+        <!-- 任务组模式：列表 + 新建 -->
+        <div id="panel-group" style="display:none">
+          <div class="section-title">任务组</div>
+          <div class="group-list" id="group-list"></div>
+          <button class="add-group-btn" id="add-group-btn">+ 新建任务组</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ===== 模态框：组 ===== -->
+  <div class="modal-bg" id="modal-bg-resume">
+    <div class="modal" style="max-width:380px">
+      <div class="modal-title">检测到上次未完成</div>
+      <p style="color:var(--text-dim);font-size:13px;line-height:1.7;margin-bottom:20px">
+        上次有任务的实际用时记录还保留着。<br>
+        <span style="color:var(--text)">继续</span> 会保留上次用时，<span style="color:var(--text)">开始新</span> 会清空所有记录。
+      </p>
+      <div class="form-actions">
+        <button class="btn btn-secondary" id="btn-resume-clear">开始新</button>
+        <button class="btn btn-primary" id="btn-resume-keep">继续</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-bg" id="modal-bg">
+    <div class="modal">
+      <div class="modal-title" id="modal-title">新建任务组</div>
+      <div class="form-row">
+        <label class="form-label">组名</label>
+        <input type="text" class="form-input" id="form-name" placeholder="例：四六级" maxlength="20">
+      </div>
+      <div class="form-row" id="form-tasks-row" style="display:none">
+        <label class="form-label">子任务</label>
+        <div id="form-tasks-list"></div>
+        <button type="button" id="form-add-task" style="margin-top:6px;padding:6px 10px;font-size:12px;color:var(--text-dim);background:var(--bg-elev-2);border-radius:4px">+ 添加子任务</button>
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-secondary" id="modal-cancel">取消</button>
+        <button class="btn btn-primary" id="modal-save" style="min-width:80px">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <!-- 导出二级菜单 -->
+  <div class="export-popover" id="export-popover">
+    <button class="export-popover-item" data-format="csv"><span class="ico">📄</span><span>导出为 CSV</span></button>
+    <button class="export-popover-item" data-format="xlsx"><span class="ico">📗</span><span>导出为 Excel</span></button>
+  </div>
+
+  <script>
+  // ============== 状态 ==============
+  const STORAGE_KEY = 'exam-timer-v3';
+
+  const State = {
+    mode: 'countdown', // countdown | stopwatch | tasks
+    countdown: { duration: 0, remaining: 0, running: false, finished: false, lastTick: 0 },
+    stopwatch: { elapsed: 0, running: false, startedAt: 0, laps: [], lapWhilePaused: false },
+    groups: [],   // [{ id, name, tasks: [{ id, name, standard }] }]
+    actualTimes: {}, // { taskId: seconds }
+    group: {      // 当前正在运行的任务组
+      active: false,
+      running: true,  // 任务组独立暂停/继续标志（不影响普通倒计时）
+      groupId: null,
+      tasks: [],   // 引用当前 group 的 tasks（实时反映 group.tasks 变化）
+      currentIndex: 0,
+      overtime: false,
+      lastTick: 0,
+      itemRemaining: 0,  // 任务组当前项剩余（与 State.countdown.remaining 完全隔离）
+      itemDuration: 0,   // 任务组当前项标准时长
+    },
+    activeTaskId: null,  // 单次选中的任务（从组里点击，未启动组）
+    customQuicks: [],    // [{ id, secs }] 用户自定义的快捷时长
+    _editing: null,      // { type: 'group'|'task', groupId, taskId? }
+  };
+
+  // ============== 持久化 + 迁移 ==============
+  function save() {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({
+        groups: State.groups,
+        actualTimes: State.actualTimes,
+        activeTaskId: State.activeTaskId,
+        countdownInput: getCountdownInput(),
+        customQuicks: State.customQuicks,
+        group: {
+          active: State.group.active,
+          running: State.group.running,
+          groupId: State.group.groupId,
+          currentIndex: State.group.currentIndex,
+          overtime: State.group.overtime,
+          itemRemaining: State.group.itemRemaining,
+          itemDuration: State.group.itemDuration,
+        },
+        countdown: {
+          remaining: State.countdown.remaining,
+          running: State.countdown.running,
+        },
+      }));
+    } catch(e) { console.error('save failed', e); }
+  }
+  function load() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        const data = JSON.parse(raw);
+        State.groups = Array.isArray(data.groups) ? data.groups : [];
+        State.actualTimes = data.actualTimes || {};
+        State.activeTaskId = data.activeTaskId || null;
+        State.customQuicks = Array.isArray(data.customQuicks) ? data.customQuicks : [];
+        if (data.countdownInput) {
+          document.getElementById('in-h').value = data.countdownInput.h;
+          document.getElementById('in-m').value = data.countdownInput.m;
+          document.getElementById('in-s').value = data.countdownInput.s;
+        }
+        if (data.group) {
+          if (data.group.active) {
+            State.group.active = true;
+            State.group.running = !!data.group.running;
+            State.group.groupId = data.group.groupId;
+            State.group.currentIndex = data.group.currentIndex || 0;
+            State.group.overtime = !!data.group.overtime;
+            State.group.itemRemaining = data.group.itemRemaining || 0;
+            State.group.itemDuration = data.group.itemDuration || 0;
+            // 引用
+            const g = State.groups.find(x => x.id === data.group.groupId);
+            if (g) State.group.tasks = g.tasks;
+            // 恢复 activeTaskId
+            if (State.group.tasks[State.group.currentIndex]) {
+              State.activeTaskId = State.group.tasks[State.group.currentIndex].id;
+            }
+            // 恢复后默认暂停（让用户主动点 ▶ 继续）
+            State.group.running = false;
+          }
+        }
+        if (data.countdown) {
+          if (typeof data.countdown.remaining === 'number') State.countdown.remaining = data.countdown.remaining;
+          State.countdown.running = false;  // 默认暂停
+        }
+        // stopwatch 不持久化运行状态，刷新后从 0 开始
+        State.stopwatch.lapWhilePaused = false;
+        return;
+      }
+      // 从 v2 迁移
+      const old = localStorage.getItem('exam-timer-v2');
+      if (old) {
+        const data = JSON.parse(old);
+        if (Array.isArray(data.tasks) && data.tasks.length) {
+          State.groups = [{
+            id: uid(),
+            name: '我的任务',
+            tasks: data.tasks.map(t => ({ id: t.id || uid(), name: t.name, standard: t.standard }))
+          }];
+        }
+        if (data.actualTimes) State.actualTimes = data.actualTimes;
+        if (data.countdownInput) {
+          document.getElementById('in-h').value = data.countdownInput.h;
+          document.getElementById('in-m').value = data.countdownInput.m;
+          document.getElementById('in-s').value = data.countdownInput.s;
+        }
+        // 把 v2 标记为已迁移
+        localStorage.setItem(STORAGE_KEY + '-migrated-from-v2', '1');
+      }
+    } catch(e) { console.error('load failed', e); }
+  }
+
+  // ============== 工具 ==============
+  function fmtTime(secs, showMs = false) {
+    secs = Math.max(0, Math.round(secs));
+    const h = Math.floor(secs / 3600);
+    const m = Math.floor((secs % 3600) / 60);
+    const s = secs % 60;
+    const pad = n => String(n).padStart(2, '0');
+    return `${pad(h)}:${pad(m)}:${pad(s)}`;
+  }
+  function fmtTimeMs(ms) {
+    const totalCs = Math.floor(ms / 10);
+    const cs = totalCs % 100;
+    const totalSecs = Math.floor(totalCs / 100);
+    const s = totalSecs % 60;
+    const m = Math.floor(totalSecs / 60) % 60;
+    const h = Math.floor(totalSecs / 3600);
+    const pad = n => String(n).padStart(2, '0');
+    return `${pad(h)}:${pad(m)}:${pad(s)}<span class="ms">.${pad(cs)}</span>`;
+  }
+  function getCountdownInput() {
+    return {
+      h: parseInt(document.getElementById('in-h').value) || 0,
+      m: parseInt(document.getElementById('in-m').value) || 0,
+      s: parseInt(document.getElementById('in-s').value) || 0,
+    };
+  }
+  function setCountdownInput(secs) {
+    document.getElementById('in-h').value = Math.floor(secs / 3600);
+    document.getElementById('in-m').value = Math.floor((secs % 3600) / 60);
+    document.getElementById('in-s').value = secs % 60;
+  }
+  function getInputSeconds() {
+    const { h, m, s } = getCountdownInput();
+    return h * 3600 + m * 60 + s;
+  }
+  function uid() { return Math.random().toString(36).slice(2, 10); }
+
+  // ============== 导出功能（CSV / Excel） ==============
+  // 格式化秒数为 HH:MM:SS.cc
+  function fmtTimeCsv(secs) {
+    secs = Math.max(0, secs);
+    const h = Math.floor(secs / 3600);
+    const m = Math.floor((secs % 3600) / 60);
+    const s = Math.floor(secs % 60);
+    const cs = Math.floor((secs - Math.floor(secs)) * 100);
+    const pad = n => String(n).padStart(2, '0');
+    return `${pad(h)}:${pad(m)}:${pad(s)}.${pad(cs)}`;
+  }
+  function fmtTimeCsvShort(secs) {
+    secs = Math.max(0, secs);
+    const h = Math.floor(secs / 3600);
+    const m = Math.floor((secs % 3600) / 60);
+    const s = Math.floor(secs % 60);
+    const pad = n => String(n).padStart(2, '0');
+    return `${pad(h)}:${pad(m)}:${pad(s)}`;
+  }
+
+  // 下载文件
+  function downloadFile(filename, content, mime) {
+    const blob = new Blob([content], { type: mime });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => {
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }, 100);
+  }
+
+  // 转义 CSV 字段
+  function csvEscape(s) {
+    if (s == null) return '';
+    s = String(s);
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  }
+  // 导出 CSV
+  function exportCsv(filename, rows) {
+    const csv = rows.map(r => r.map(csvEscape).join(',')).join('\n');
+    // 存 UTF-8 BOM，Excel/Numbers 都能识别
+    downloadFile(filename, '\ufeff' + csv, 'text/csv;charset=utf-8');
+  }
+
+  // ==============  Minimal xlsx writer （零依赖） ==============
+  // 生成符合 ECMA-376 的最小可读 .xlsx（zip 打包 + 几份 xml）
+  // 参考 https://www.ecma-international.org/publications/standards/Ecma-376.htm
+
+  // CRC32 查表
+  const CRC_TABLE = (() => {
+    const t = new Uint32Array(256);
+    for (let n = 0; n < 256; n++) {
+      let c = n;
+      for (let k = 0; k < 8; k++) c = (c & 1) ? (0xedb88320 ^ (c >>> 1)) : (c >>> 1);
+      t[n] = c >>> 0;
+    }
+    return t;
+  })();
+  function crc32(buf) {
+    let c = 0xffffffff;
+    for (let i = 0; i < buf.length; i++) c = CRC_TABLE[(c ^ buf[i]) & 0xff] ^ (c >>> 8);
+    return (c ^ 0xffffffff) >>> 0;
+  }
+  // 转义 XML 实体
+  function xmlEscape(s) {
+    return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[c]));
+  }
+  // UTF-8 编码（支持中文、emoji）
+  function strToBytes(s) {
+    return new TextEncoder().encode(s);
+  }
+
+  // 生成 sheet1.xml 的内容
+  function buildSheetXml(rows) {
+    const lines = ['<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',
+      '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">',
+      '<sheetData>'];
+    rows.forEach((row, ri) => {
+      const r = ri + 1;
+      let cells = '';
+      row.forEach((val, ci) => {
+        if (val === '' || val == null) return;
+        const colRef = String.fromCharCode(65 + ci);  // 简单假设 < 26 列
+        if (typeof val === 'number' && isFinite(val)) {
+          cells += `<c r="${colRef}${r}"><v>${val}</v></c>`;
+        } else {
+          // 文字类型默认 inline 存到 t 属性，避免 sharedStrings 复杂度
+          cells += `<c r="${colRef}${r}" t="inlineStr"><is><t xml:space="preserve">${xmlEscape(val)}</t></is></c>`;
+        }
+      });
+      lines.push(`<row r="${r}">${cells}</row>`);
+    });
+    lines.push('</sheetData></worksheet>');
+    return lines.join('');
+  }
+
+  // zip 打包：files = [{name, data: Uint8Array}, ...]
+  function buildZip(files) {
+    // local file headers + data
+    const localParts = [];
+    const central = [];
+    let offset = 0;
+    for (const f of files) {
+      const nameBytes = strToBytes(f.name);
+      const data = f.data;
+      const crc = crc32(data);
+      const size = data.length;
+      // local file header (30 字节 + name)
+      const local = new Uint8Array(30 + nameBytes.length);
+      const dv = new DataView(local.buffer);
+      dv.setUint32(0, 0x04034b50, true);  // signature
+      dv.setUint16(4, 20, true);          // version needed
+      dv.setUint16(6, 0, true);           // flags
+      dv.setUint16(8, 0, true);           // method = stored
+      dv.setUint16(10, 0, true);          // mod time
+      dv.setUint16(12, 0, true);          // mod date
+      dv.setUint32(14, crc, true);
+      dv.setUint32(18, size, true);       // compressed size
+      dv.setUint32(22, size, true);       // uncompressed size
+      dv.setUint16(26, nameBytes.length, true);
+      dv.setUint16(28, 0, true);          // extra
+      local.set(nameBytes, 30);
+      localParts.push(local, data);
+      // central directory header (46 字节 + name)
+      const cent = new Uint8Array(46 + nameBytes.length);
+      const cdv = new DataView(cent.buffer);
+      cdv.setUint32(0, 0x02014b50, true);
+      cdv.setUint16(4, 20, true);         // version made by
+      cdv.setUint16(6, 20, true);         // version needed
+      cdv.setUint16(8, 0, true);
+      cdv.setUint16(10, 0, true);
+      cdv.setUint16(12, 0, true);
+      cdv.setUint16(14, 0, true);
+      cdv.setUint32(16, crc, true);
+      cdv.setUint32(20, size, true);
+      cdv.setUint32(24, size, true);
+      cdv.setUint16(28, nameBytes.length, true);
+      cdv.setUint16(30, 0, true);
+      cdv.setUint16(32, 0, true);
+      cdv.setUint16(34, 0, true);
+      cdv.setUint16(36, 0, true);
+      cdv.setUint32(38, 0, true);
+      cdv.setUint32(42, offset, true);
+      cent.set(nameBytes, 46);
+      central.push(cent);
+      offset += local.length + data.length;
+    }
+    // end of central directory (22 字节)
+    const localSize = localParts.reduce((s, p) => s + p.length, 0);
+    const centralSize = central.reduce((s, p) => s + p.length, 0);
+    const eocd = new Uint8Array(22);
+    const ev = new DataView(eocd.buffer);
+    ev.setUint32(0, 0x06054b50, true);
+    ev.setUint16(8, files.length, true);   // entries on this disk
+    ev.setUint16(10, files.length, true);  // total entries
+    ev.setUint32(12, centralSize, true);   // size of central dir
+    ev.setUint32(16, localSize, true);     // offset of central dir
+    // 合并
+    const out = new Uint8Array(localSize + centralSize + 22);
+    let p = 0;
+    for (const part of localParts) { out.set(part, p); p += part.length; }
+    for (const part of central) { out.set(part, p); p += part.length; }
+    out.set(eocd, p);
+    return out;
+  }
+
+  // 导出 xlsx
+  function exportXlsx(filename, sheetName, rows) {
+    const contentTypes = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
+</Types>`;
+    const rootRels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`;
+    const workbook = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="${xmlEscape(sheetName)}" sheetId="1" r:id="rId1"/></sheets>
+</workbook>`;
+    const workbookRels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+</Relationships>`;
+    const styles = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <fonts count="1"><font><sz val="11"/><name val="Calibri"/></font></fonts>
+  <fills count="1"><fill><patternFill patternType="none"/></fill></fills>
+  <borders count="1"><border/></borders>
+  <cellStyleXfs count="1"><xf/></cellStyleXfs>
+  <cellXfs count="1"><xf/></cellXfs>
+</styleSheet>`;
+    const sheet = buildSheetXml(rows);
+    const files = [
+      { name: '[Content_Types].xml', data: strToBytes(contentTypes) },
+      { name: '_rels/.rels', data: strToBytes(rootRels) },
+      { name: 'xl/workbook.xml', data: strToBytes(workbook) },
+      { name: 'xl/_rels/workbook.xml.rels', data: strToBytes(workbookRels) },
+      { name: 'xl/styles.xml', data: strToBytes(styles) },
+      { name: 'xl/worksheets/sheet1.xml', data: strToBytes(sheet) },
+    ];
+    const zip = buildZip(files);
+    downloadFile(filename, zip, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  }
+
+  // 导出秒表
+  function exportStopwatch(format) {
+    const laps = State.stopwatch.laps;
+    if (!laps.length) { toast('没有数据可导出', 'warn'); return; }
+    const rows = [['分段', '累计时间', '段内时长']];
+    let prev = 0;
+    laps.forEach((t, i) => {
+      const total = t / 1000;
+      const delta = (t - prev) / 1000;
+      prev = t;
+      rows.push([String(i + 1), fmtTimeCsv(total), fmtTimeCsv(delta)]);
+    });
+    const last = laps[laps.length - 1] / 1000;
+    rows.push(['', '', '']);
+    rows.push(['总时长', fmtTimeCsv(last), '']);
+    const ts = new Date().toISOString().slice(0, 19).replace(/[T:]/g, '-');
+    if (format === 'xlsx') {
+      exportXlsx(`秒表_${ts}.xlsx`, '秒表', rows);
+    } else {
+      exportCsv(`秒表_${ts}.csv`, rows);
+    }
+    toast(`已导出 ${laps.length} 个分段`, 'success');
+  }
+
+  // 导出任务组
+  function exportGroup(groupId, format) {
+    const g = State.groups.find(x => x.id === groupId);
+    if (!g) { toast('组不存在', 'warn'); return; }
+    const rows = [['任务', '标准时长', '实际用时', '差异']];
+    let totalStd = 0, totalActual = 0;
+    g.tasks.forEach(t => {
+      const std = t.standard;
+      const actual = State.actualTimes[t.id] != null ? State.actualTimes[t.id] : null;
+      const diff = actual != null ? actual - std : null;
+      totalStd += std;
+      if (actual != null) totalActual += actual;
+      rows.push([
+        t.name,
+        fmtTimeCsvShort(std),
+        actual != null ? fmtTimeCsvShort(actual) : '未完成',
+        diff != null ? (diff >= 0 ? '+' : '') + fmtTimeCsvShort(Math.abs(diff)) : '—',
+      ]);
+    });
+    rows.push(['', '', '', '']);
+    rows.push(['合计', fmtTimeCsvShort(totalStd), fmtTimeCsvShort(totalActual), (totalActual - totalStd >= 0 ? '+' : '') + fmtTimeCsvShort(Math.abs(totalActual - totalStd))]);
+    const ts = new Date().toISOString().slice(0, 19).replace(/[T:]/g, '-');
+    if (format === 'xlsx') {
+      exportXlsx(`${g.name}_${ts}.xlsx`, g.name, rows);
+    } else {
+      exportCsv(`${g.name}_${ts}.csv`, rows);
+    }
+    toast(`已导出「${g.name}」`, 'success');
+  }
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  // ============== 通知 ==============
+  let toastTimer;
+  function toast(msg, type = '') {
+    const el = document.getElementById('toast');
+    el.textContent = msg;
+    el.className = 'toast show ' + type;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { el.className = 'toast ' + type; }, 2200);
+  }
+
+  // ============== 提示音 ==============
+  let audioCtx;
+  function beep(pattern = [880, 0]) {
+    try {
+      audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+      const ctx = audioCtx;
+      let t = ctx.currentTime;
+      for (let i = 0; i < pattern.length; i += 2) {
+        const f = pattern[i], d = pattern[i+1] || 0.2;
+        if (f > 0) {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = 'sine';
+          osc.frequency.value = f;
+          gain.gain.setValueAtTime(0, t);
+          gain.gain.linearRampToValueAtTime(0.3, t + 0.02);
+          gain.gain.linearRampToValueAtTime(0, t + d);
+          osc.connect(gain).connect(ctx.destination);
+          osc.start(t);
+          osc.stop(t + d);
+        }
+        t += d + 0.05;
+      }
+    } catch(e) { console.error('beep failed', e); }
+  }
+
+  // ============== 任务查找 ==============
+  function findTask(taskId) {
+    for (const g of State.groups) {
+      const t = g.tasks.find(x => x.id === taskId);
+      if (t) return { task: t, group: g };
+    }
+    return null;
+  }
+  function getTaskActual(taskId) {
+    if (State.actualTimes[taskId] !== undefined) return State.actualTimes[taskId];
+    // 当前正在运行的任务（mainLoop 已在累加）
+    if (State.group.active && State.group.tasks[State.group.currentIndex]?.id === taskId && State.group.running) {
+      return State.actualTimes[taskId] || 0;
+    }
+    return null;
+  }
+
+  // ============== 渲染：tabs + main grid ==============
+  function renderTabs() {
+    document.querySelectorAll('.tab').forEach(t => {
+      t.classList.toggle('active', t.dataset.tab === State.mode);
+    });
+    // 控制左栏显隐
+    const main = document.getElementById('main');
+    main.classList.toggle('has-group', State.mode === 'tasks');
+    // 右栏 panel
+    document.getElementById('panel-countdown').style.display = State.mode === 'countdown' ? 'block' : 'none';
+    document.getElementById('panel-stopwatch').style.display = State.mode === 'stopwatch' ? 'block' : 'none';
+    document.getElementById('panel-group').style.display = State.mode === 'tasks' ? 'block' : 'none';
+    document.getElementById('right-panel-title').textContent =
+      State.mode === 'countdown' ? '快捷时长' :
+      State.mode === 'stopwatch' ? '分段记录' :
+      '任务组信息';
+  }
+
+  // 统一切模式（tab click + 按键 1/2/3 都走这里，效果 100% 一致）
+  function setMode(newMode) {
+    if (newMode === State.mode) return;
+    if (!['countdown', 'stopwatch', 'tasks'].includes(newMode)) return;
+    State.mode = newMode;
+    if (newMode === 'countdown' || newMode === 'stopwatch') {
+      State.activeTaskId = null;
+    }
+    // 隔离：切到基础倒计时时，任务组保持运行状态（不停。用户切回来能续）
+    if (newMode === 'countdown' && State.group.active) {
+      // 保留 State.group.active / groupId / currentIndex，计时照常
+      State.countdown.lastTick = performance.now();
+      if (State.group.lastTick === 0) State.group.lastTick = performance.now();
+      // group 暂停时：重置 cd 为 idle 干净状态（避免 startGroup 设的 remaining 残留 → btn-start / timeInput 状态错位）
+      if (!State.group.running) {
+        const secs = getInputSeconds();
+        State.countdown.remaining = secs;
+        State.countdown.duration = secs;
+        State.countdown.finished = false;
+        State.countdown.running = false;
+        State.activeTaskId = null;
+      }
+    } else if (newMode === 'countdown') {
+      // 无任务组运行：正常切到倒计时模式
+      const secs = getInputSeconds();
+      State.countdown.remaining = secs;
+      State.countdown.duration = secs;
+      State.countdown.running = false;
+      State.countdown.finished = false;
+    }
+    // 隔离：任务组未运行才清空基础倒计时状态
+    if (newMode === 'tasks' && !State.group.active) {
+      State.countdown.remaining = 0;
+      State.countdown.duration = 0;
+      State.countdown.finished = false;
+      State.countdown.running = false;
+    }
+    render();
+  }
+
+  // ============== 渲染：任务组列表 ==============
+  function renderGroups() {
+    const list = document.getElementById('group-list');
+    list.innerHTML = '';
+
+    if (!State.groups.length) {
+      list.innerHTML = '<div class="group-empty">还没有任务组<br>点击下方新建<br>例：四六级 / 工作会议 / 番茄钟</div>';
+      return;
+    }
+
+    State.groups.forEach(g => {
+      const isActiveGroup = State.group.active && State.group.groupId === g.id;
+      const isCurrentGroup = State.activeTaskId && findTask(State.activeTaskId)?.group.id === g.id;
+
+      const totalStd = g.tasks.reduce((s, t) => s + t.standard, 0);
+      const totalActual = g.tasks.reduce((s, t) => {
+        const a = getTaskActual(t.id);
+        return s + (a || 0);
+      }, 0);
+      const hasActual = g.tasks.some(t => getTaskActual(t.id) !== null);
+
+      const item = document.createElement('div');
+      item.className = 'group-item' + (isActiveGroup ? ' running' : (isCurrentGroup ? ' active' : ''));
+      item.dataset.groupId = g.id;
+
+      let tasksHtml = g.tasks.map((t, i) => {
+        const isDone = State.actualTimes[t.id] !== undefined;
+        const isLive = isActiveGroup && State.group.tasks[State.group.currentIndex]?.id === t.id;
+        const isOvertime = isLive && State.group.overtime;
+        const actualSec = getTaskActual(t.id);
+        let actualHtml;
+        if (actualSec === null) {
+          actualHtml = '<span class="group-task-actual">--:--</span>';
+        } else {
+          const diff = actualSec - t.standard;
+          let cls = 'group-task-actual';
+          if (isOvertime) cls += ' overtime-val';
+          else if (isLive) cls += ' live';
+          else if (diff < -1) cls += ' faster';
+          else if (diff > 1) cls += ' slower';
+          actualHtml = `<span class="${cls}">${fmtTime(actualSec)}</span>`;
+        }
+        const cls = 'group-task' + (isLive ? ' current' : '') + (isDone ? ' done' : '');
+        const isFirstTask = i === 0;
+        const isLastTask = i === g.tasks.length - 1;
+        return `
+          <div class="${cls}" data-task-id="${t.id}">
+            <div class="group-task-info">
+              <span class="group-task-name">${escapeHtml(t.name)}</span>
+              <span class="group-task-std-badge">${fmtTime(t.standard)}</span>
+            </div>
+            <div class="group-task-info" style="text-align:right">
+              <span class="group-task-std" style="color:var(--text-faint)">用时</span>
+              ${actualHtml}
+            </div>
+            <div class="group-task-actions">
+              <button class="task-mini" data-mv="up" data-idx="${i}" ${isFirstTask ? 'disabled' : ''} title="上移">↑</button>
+              <button class="task-mini" data-mv="down" data-idx="${i}" ${isLastTask ? 'disabled' : ''} title="下移">↓</button>
+              <button class="task-mini" data-action="edit-task" title="编辑">✎</button>
+              <button class="task-mini danger" data-action="del-task" title="删除">🗑</button>
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      // 摘要（只在有 actual 时显示）
+      let summaryHtml = '';
+      if (g.tasks.length && hasActual) {
+        const diff = totalActual - totalStd;
+        let diffStr, diffCls = 'summary-value';
+        if (Math.abs(diff) < 0.1) { diffStr = '± 0.0'; }
+        else { const sign = diff > 0 ? '+' : '−'; diffStr = `${sign} ${fmtTime(Math.abs(diff))}`; diffCls += diff > 0 ? ' diff-over' : ' diff-under'; }
+        summaryHtml = `
+          <div class="group-summary" data-group-id="${g.id}">
+            <div class="summary-row"><span class="summary-label">计划</span><span class="summary-value summary-std">${fmtTime(totalStd)}</span></div>
+            <div class="summary-row"><span class="summary-label">实际</span><span class="summary-value summary-actual">${fmtTime(totalActual)}</span></div>
+            <div class="summary-row"><span class="summary-label">差异</span><span class="${diffCls} summary-diff">${diffStr}</span></div>
+          </div>
+        `;
+      }
+
+      item.innerHTML = `
+        <div class="group-head">
+          <div class="group-head-row1">
+            <span class="group-name">${escapeHtml(g.name)}</span>
+            <span class="group-stats">${g.tasks.length} 项 · ${fmtTime(totalStd)}</span>
+          </div>
+          <div class="group-head-row2">
+            <button class="group-mini-btn primary-mini" data-action="play-group" title="开始整组">▶ 开始</button>
+            <button class="group-mini-btn" data-action="edit-group" title="编辑组">✎</button>
+            <button class="group-mini-btn danger" data-action="del-group" title="删除组">🗑</button>
+            <button class="group-export-btn" data-action="export-group" title="导出数据">📊 导出</button>
+          </div>
+        </div>
+        <div class="group-tasks">${tasksHtml}<div class="add-task-row" data-action="add-task">+ 添加子任务</div></div>
+        ${summaryHtml}
+      `;
+      list.appendChild(item);
+    });
+
+    const totalAll = State.groups.reduce((s, g) => s + g.tasks.reduce((ss, t) => ss + t.standard, 0), 0);
+    // 共 N 组 · 合计 X (右栏可选展示)
+  }
+
+  // ============== 渲染：主显示区 ==============
+  function renderDisplay() {
+    const modeEl = document.getElementById('display-mode');
+    const labelEl = document.getElementById('display-label');
+    const timeEl = document.getElementById('display-time');
+    const overtimeEl = document.getElementById('display-overtime');
+    const actualEl = document.getElementById('display-actual');
+    const progress = document.getElementById('progress');
+    const progressBar = document.getElementById('progress-bar');
+    const timeInput = document.getElementById('time-input');
+    const groupProgress = document.getElementById('group-progress');
+    const groupPills = document.getElementById('group-pills');
+    const groupBanner = document.getElementById('group-banner');
+    const bannerName = document.getElementById('banner-name');
+
+    // 控件集（按 mode 切换）
+    document.getElementById('controls-countdown').style.display = State.mode === 'countdown' ? 'flex' : 'none';
+    document.getElementById('controls-stopwatch').style.display = State.mode === 'stopwatch' ? 'flex' : 'none';
+    document.getElementById('controls-group').style.display = State.mode === 'tasks' ? 'flex' : 'none';
+    // 倒计时：仅在完全 idle（未启动过）时显示时间设置栏；启动/暂停都隐藏（让主区 + 按钮更突出）
+    const cdIdle = State.mode === 'countdown' && !State.countdown.running && State.countdown.remaining === State.countdown.duration && !State.countdown.finished;
+    timeInput.style.display = cdIdle ? 'flex' : 'none';
+
+    // 任务组 banner
+    // 显示规则：非 tasks tab 一律显示；tasks tab 仅在暂停时显示（进行中不显示，避免与主区元素重复）
+    const inGroup = State.group.active;
+    const showBanner = inGroup && (State.mode !== 'tasks' || !State.group.running);
+    groupBanner.classList.toggle('show', showBanner);
+    const bannerStatus = document.getElementById('banner-status');
+    if (inGroup) {
+      const g = State.groups.find(x => x.id === State.group.groupId);
+      bannerName.textContent = g ? g.name : '';
+      if (bannerStatus) {
+        bannerStatus.textContent = State.group.running ? '进行中' : '暂停中';
+        bannerStatus.className = 'banner-status ' + (State.group.running ? 'running' : 'paused');
+      }
+    } else {
+      bannerName.textContent = '';
+      if (bannerStatus) { bannerStatus.textContent = ''; bannerStatus.className = 'banner-status'; }
+    }
+
+    // pills（仅在 tasks tab 显示，避免污染其他 tab）
+    if (inGroup && State.mode === 'tasks') {
+      groupProgress.style.display = 'flex';
+      groupPills.innerHTML = State.group.tasks.map((t, i) => {
+        let cls = '';
+        if (i === State.group.currentIndex) cls = 'active';
+        return `<span class="group-pill ${cls}" data-task-id="${t.id}" title="点击跳转到「${escapeHtml(t.name)}」">${escapeHtml(t.name)}</span>`;
+      }).join('');
+    } else {
+      groupProgress.style.display = 'none';
+    }
+
+    // Overtime 提示
+    if (inGroup && State.group.overtime) {
+      overtimeEl.textContent = `⏱ 已超时 ${fmtTime(Math.max(0, -State.countdown.remaining))}`;
+      overtimeEl.style.display = 'block';
+    } else {
+      overtimeEl.style.display = 'none';
+    }
+
+    // ====== 倒计时模式 ======
+    if (State.mode === 'countdown') {
+      // 完全隔离：与任务组互不干扰，UI 与普通倒计时一模一样
+      // （任务组状态仅靠顶部 banner 提示）
+      modeEl.textContent = '倒计时';
+      if (State.countdown.running) labelEl.textContent = '— 进行中 —';
+      else if (State.countdown.remaining > 0 && State.countdown.remaining < State.countdown.duration) labelEl.textContent = '— 暂停中 —';
+      else labelEl.textContent = '— 输入时长后开始 —';
+      renderCountdownTime(timeEl, labelEl, progress, progressBar, false);
+      actualEl.style.display = 'none';
+    }
+    // ====== 秒表模式 ======
+    else if (State.mode === 'stopwatch') {
+      modeEl.textContent = '秒表';
+    if (State.stopwatch.running) labelEl.textContent = '— 进行中 —';
+    else if (State.stopwatch.elapsed > 0) labelEl.textContent = '— 暂停中 —';
+    else labelEl.textContent = '—';
+  
+    timeEl.innerHTML = fmtTimeMs(getStopwatchDisplayMs());
+      // 秒表暂停时加 .paused 触发呼吸
+      const swBaseCls = 'display-time';
+      timeEl.className = (!State.stopwatch.running && State.stopwatch.elapsed > 0) ? swBaseCls + ' paused' : swBaseCls;
+      progress.style.display = 'none';
+      actualEl.style.display = 'none';
+      renderStopwatchControls();
+    }
+    // ====== 任务组模式 ======
+    else if (State.mode === 'tasks') {
+      modeEl.textContent = '任务组';
+      const cd = renderGroupDisplay(labelEl, timeEl, progress, progressBar, actualEl);
+      renderGroupControls(cd);
+    }
+  }
+
+  // 倒计时/任务组 共用：数字、进度条
+  function renderCountdownTime(timeEl, labelEl, progress, progressBar, isGroup) {
+    if (State.countdown.finished) {
+      timeEl.innerHTML = '00:00:00';
+      timeEl.className = 'display-time done';
+      progress.style.display = 'none';
+    } else if (State.countdown.running) {
+      timeEl.innerHTML = fmtTime(State.countdown.remaining);
+      let timeCls = 'display-time';
+      if (State.group.overtime) timeCls += ' overtime-running';
+      else if (State.countdown.remaining < 10 && State.countdown.remaining > 0) timeCls += ' warn';
+      timeEl.className = timeCls;
+      if (State.countdown.duration > 0) {
+        progress.style.display = 'block';
+        const rawPct = ((State.countdown.duration - State.countdown.remaining) / State.countdown.duration) * 100;
+        progressBar.style.width = Math.min(100, rawPct) + '%';
+      } else {
+        progress.style.display = 'none';
+      }
+    } else if (State.countdown.remaining > 0 && State.countdown.remaining < State.countdown.duration && !State.group.active) {
+      // 已启动过（暂停/运行）：显示进度条 + 已完成比例
+      timeEl.innerHTML = fmtTime(State.countdown.remaining);
+      // 暂停时加 .paused 触发呼吸；运行时不加
+      timeEl.className = State.countdown.running ? 'display-time' : 'display-time paused';
+      if (State.countdown.duration > 0) {
+        progress.style.display = 'block';
+        const usedPct = ((State.countdown.duration - State.countdown.remaining) / State.countdown.duration) * 100;
+        progressBar.style.width = Math.min(100, usedPct) + '%';
+      }
+    } else {
+      // idle
+      let secs;
+      if (isGroup || State.group.active) {
+        // 任务组活跃时，倒计时 tab 也不显示任何数字（避免和任务组混淆/污染）
+        secs = 0;
+      } else {
+        secs = getInputSeconds();
+        if (State.activeTaskId) {
+          const found = findTask(State.activeTaskId);
+          if (found) secs = found.task.standard;
+        }
+      }
+      timeEl.innerHTML = fmtTime(secs);
+      timeEl.className = secs === 0 ? 'display-time idle' : 'display-time';
+      progress.style.display = 'none';
+    }
+  }
+
+  function renderGroupDisplay(labelEl, timeEl, progress, progressBar, actualEl) {
+    const inGroup = State.group.active;
+    const cur = inGroup ? State.group.tasks[State.group.currentIndex] : null;
+    const found = State.activeTaskId ? findTask(State.activeTaskId) : null;
+
+    // label
+    if (cur) labelEl.textContent = `${cur.name} · 第 ${State.group.currentIndex + 1} / ${State.group.tasks.length} 项`;
+    else if (found) labelEl.textContent = `${found.task.name} · ${found.group.name}`;
+    else labelEl.textContent = '— 请先创建或选择任务组 —';
+
+    // 数字（任务组使用独立 itemRemaining，与普通倒计时完全隔离）
+    if (inGroup) {
+      timeEl.innerHTML = fmtTime(State.group.itemRemaining);
+      // 暂停时加 .paused 触发呼吸
+      const baseCls = State.group.overtime ? 'overtime-running' : 'display-time';
+      timeEl.className = (!State.group.running) ? baseCls + ' paused' : baseCls;
+      let timeCls = 'display-time';
+      if (State.group.overtime) timeCls += ' overtime-running';
+      else if (State.group.itemRemaining < 10 && State.group.itemRemaining > 0) timeCls += ' warn';
+      timeEl.className = timeCls;
+      if (State.group.itemDuration > 0) {
+        progress.style.display = 'block';
+        const rawPct = ((State.group.itemDuration - State.group.itemRemaining) / State.group.itemDuration) * 100;
+        progressBar.style.width = Math.min(100, rawPct) + '%';
+      } else {
+        progress.style.display = 'none';
+      }
+    } else if (found) {
+      timeEl.innerHTML = fmtTime(found.task.standard);
+      timeEl.className = 'display-time idle';
+      progress.style.display = 'none';
+    } else {
+      timeEl.innerHTML = '00:00:00';
+      timeEl.className = 'display-time idle';
+      progress.style.display = 'none';
+    }
+
+    // 实际用时
+    if (inGroup) {
+      const target = cur;
+      const a = target ? State.actualTimes[target.id] : undefined;
+      if (a !== undefined) {
+        let cls = 'display-actual';
+        if (State.countdown.running) cls += ' live';
+        if (State.group.overtime) cls = 'display-actual overtime-val';
+        actualEl.textContent = `实际用时 ${fmtTime(a)}`;
+        actualEl.className = cls;
+        actualEl.style.display = 'block';
+      } else {
+        actualEl.style.display = 'none';
+      }
+    } else if (found) {
+      const a = State.actualTimes[found.task.id];
+      if (a !== undefined) {
+        actualEl.textContent = `上次用时 ${fmtTime(a)}`;
+        actualEl.className = 'display-actual';
+        actualEl.style.display = 'block';
+      } else {
+        actualEl.style.display = 'none';
+      }
+    } else {
+      actualEl.style.display = 'none';
+    }
+
+    return { inGroup, cur, found };
+  }
+
+  function renderStopwatchControls() {
+    const swStart = document.getElementById('btn-start-sw');
+    const lapBtn = document.getElementById('btn-lap');
+    if (State.stopwatch.running) {
+      swStart.innerHTML = '⏸ 暂停';
+      swStart.classList.add('running');
+      lapBtn.disabled = false;
+    } else {
+      swStart.classList.remove('running');
+      swStart.innerHTML = State.stopwatch.elapsed > 0 ? '▶ 继续' : '▶ 开始';
+      // 暂停态：elapsed > 0 且未分过段 才能再次分段
+      lapBtn.disabled = !(State.stopwatch.elapsed > 0 && !State.stopwatch.lapWhilePaused);
+    }
+  }
+
+  function renderGroupControls(ctx) {
+    const { inGroup, cur, found } = ctx;
+    const grpStart = document.getElementById('btn-start-grp');
+    const prevBtn = document.getElementById('btn-prev-task');
+    const nextBtn = document.getElementById('btn-next-task');
+    const stopBtn = document.getElementById('btn-stop-group');
+
+    // 默认按钮可用（在 inGroup 状态下）
+    grpStart.disabled = false;
+
+    if (inGroup) {
+      // 运行中（任务组独立暂停/继续标志）
+      if (State.group.running) {
+        grpStart.innerHTML = '⏸ 暂停';
+        grpStart.classList.add('running');
+      } else {
+        grpStart.classList.remove('running');
+        grpStart.innerHTML = State.group.itemRemaining > 0 ? '▶ 继续' : '▶ 开始';
+      }
+      // 端头保护
+      prevBtn.disabled = State.group.currentIndex <= 0;
+      const isLast = State.group.currentIndex >= State.group.tasks.length - 1;
+      if (isLast) {
+        nextBtn.textContent = '⏹ 完成';
+        nextBtn.classList.remove('btn-warn');
+        nextBtn.classList.add('btn-secondary');
+      } else {
+        nextBtn.textContent = '⏭ 下一项';
+        nextBtn.classList.remove('btn-warn');
+        nextBtn.classList.add('btn-secondary');
+      }
+      nextBtn.disabled = false;
+      stopBtn.style.display = 'inline-flex';
+    } else {
+      // 未运行
+      grpStart.classList.remove('running');
+      grpStart.innerHTML = '▶ 开始';
+      // 未选任务时不允许启动
+      grpStart.disabled = !found;
+      // 未启动但已选任务组：prev/next 启用（让用户预览/切换预选）
+      const selIdx = found ? found.group.tasks.findIndex(x => x.id === State.activeTaskId) : -1;
+      prevBtn.disabled = !found || selIdx <= 0;
+      nextBtn.style.display = 'inline-flex';
+      nextBtn.textContent = (found && selIdx >= found.group.tasks.length - 1) ? '⏯ 启动' : '⏭ 下一项';
+      nextBtn.classList.add('btn-secondary');
+      nextBtn.classList.remove('btn-warn');
+      nextBtn.disabled = !found;
+      stopBtn.style.display = 'none';
+    }
+  }
+
+  function fmtCustomLabel(secs) {
+    if (secs < 60) return `0:${String(secs).padStart(2, '0')}`;
+    const m = Math.floor(secs / 60);
+    const s = secs % 60;
+    return s === 0 ? `${m}:00` : `${m}:${String(s).padStart(2, '0')}`;
+  }
+  function renderCustomQuicks() {
+    const box = document.getElementById('custom-quick-list');
+    if (!box) return;
+    if (!State.customQuicks.length) { box.innerHTML = ''; return; }
+    box.innerHTML = State.customQuicks.map(c => `
+      <span class="group-pill" data-custom-use="${c.secs}" title="点击设置 ${fmtCustomLabel(c.secs)}" style="cursor:pointer">
+        ${fmtCustomLabel(c.secs)}
+        <span data-custom-del="${c.id}" style="margin-left:4px;cursor:pointer;opacity:0.6;font-size:10px" title="删除">🗑</span>
+      </span>
+    `).join('');
+  }
+
+  // ============== 渲染：右栏 ==============
+  function renderRightPanel() {
+    if (State.mode === 'stopwatch') renderLaps();
+    if (State.mode === 'countdown') renderCustomQuicks();
+  }
+
+  function renderLaps() {
+    const laps = State.stopwatch.laps;
+    const el = document.getElementById('laps');
+    const cur = document.getElementById('info-sw-current');
+    const cnt = document.getElementById('info-sw-laps');
+    const fast = document.getElementById('info-sw-fastest');
+    const slow = document.getElementById('info-sw-slowest');
+    const avg = document.getElementById('info-sw-avg');
+    if (cur) cur.innerHTML = fmtTimeMs(getStopwatchDisplayMs());
+    if (cnt) cnt.textContent = laps.length;
+
+    if (!laps.length) {
+      el.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-faint);font-size:11px;">暂无记录</div>';
+      if (fast) fast.textContent = '—';
+      if (slow) slow.textContent = '—';
+      if (avg) avg.textContent = '—';
+      return;
+    }
+    el.innerHTML = '';
+    let prev = 0;
+    const deltas = [];
+    laps.forEach((t, i) => {
+      const delta = t - prev;
+      deltas.push(delta);
+      prev = t;
+      const item = document.createElement('div');
+      item.className = 'lap-item';
+      const deltaText = i === 0 ? '首段' : `+${fmtTimeMs(delta)}`;
+      item.innerHTML = `<span class="lap-num">#${i+1}</span><span class="lap-time">${fmtTimeMs(t)}</span><span class="lap-delta">${deltaText}</span>`;
+      el.appendChild(item);
+    });
+    const minD = Math.min(...deltas);
+    const maxD = Math.max(...deltas);
+    const avgD = deltas.reduce((a, b) => a + b, 0) / deltas.length;
+    if (fast) fast.innerHTML = fmtTimeMs(minD);
+    if (slow) slow.innerHTML = fmtTimeMs(maxD);
+    if (avg) avg.innerHTML = fmtTimeMs(avgD);
+  }
+
+  function render() {
+    renderTabs();
+    renderGroups();
+    renderDisplay();
+    renderRightPanel();
+  }
+
+  // ============== 倒计时逻辑 ==============
+  function startCountdown() {
+    if (State.countdown.finished) resetCountdown(true);
+    if (!State.countdown.running) {
+      // 仅在 idle (未启动过) 才用 input 预设值；已启动过的剩余时间继续倒计时
+      const cdIdle = State.countdown.remaining === 0
+        || (State.countdown.remaining === State.countdown.duration && State.countdown.duration > 0);
+      if (cdIdle) {
+        const secs = getInputSeconds();
+        if (secs <= 0) { toast('请先设置时长', 'warn'); return; }
+        State.countdown.duration = secs;
+        State.countdown.remaining = secs;
+        // 避免被任务组污染：从 input 全新启动，与 group 完全独立
+        State.activeTaskId = null;
+      }
+      State.countdown.running = true;
+      State.countdown.lastTick = performance.now();
+      if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+      // 任务组：初始化 lastTick
+      if (State.group.active && State.group.lastTick === 0) {
+        State.group.lastTick = performance.now();
+      }
+    } else {
+      State.countdown.running = false;
+    }
+    save();
+    render();
+  }
+
+  function resetCountdown(keepInput = false) {
+    State.countdown.running = false;
+    State.countdown.finished = false;
+    State.countdown.remaining = 0;
+    State.countdown.duration = 0;
+    if (keepInput) {
+      const secs = getInputSeconds();
+      State.countdown.remaining = secs;
+      State.countdown.duration = secs;
+    }
+    if (State.group.active) {
+      State.group.overtime = false;
+      State.group.lastTick = 0;
+    }
+    render();
+    save();
+  }
+
+  function tickCountdown() {
+    const now = performance.now();
+    // 任务组模式：增量累加到 actualTimes（独立于普通倒计时，可同时跑）
+    if (State.group.active && State.group.running) {
+      const cur = State.group.tasks[State.group.currentIndex];
+      if (cur) {
+        if (State.group.lastTick === 0) State.group.lastTick = now;
+        const delta = (now - State.group.lastTick) / 1000;
+        State.group.lastTick = now;
+        State.actualTimes[cur.id] = (State.actualTimes[cur.id] || 0) + delta;
+        // 独立计算任务组项剩余（不修改 State.countdown.remaining）
+        State.group.itemRemaining = cur.standard - State.actualTimes[cur.id];
+        State.group.itemDuration = cur.standard;
+        if (!State.group.overtime && State.group.itemRemaining <= 0) {
+          State.group.overtime = true;
+          toast('⏰ 本项标准时间到，可继续累计或切到下一项。', 'warn');
+          beep([880, 0.2, 0, 0.1, 660, 0.3]);
+        }
+      }
+    }
+    // 普通倒计时模式：remaining 减少（与任务组完全隔离，可同时跑）
+    if (State.countdown.running) {
+      const delta = (now - State.countdown.lastTick) / 1000;
+      State.countdown.lastTick = now;
+      State.countdown.remaining -= delta;
+      if (State.countdown.remaining <= 0 && !State.countdown.finished) {
+        State.countdown.remaining = 0;
+        State.countdown.running = false;
+        State.countdown.finished = true;
+        beep([880, 0.3, 0, 0.1, 1320, 0.5]);
+        toast('⏰ 时间到！', 'success');
+      }
+    }
+  }
+
+  // ============== 任务组：核心操作 ==============
+
+  // 启动一整组（从 activeTaskId 指定的子任务开始；前面 task 的累计清空）
+  function startGroup(groupId) {
+    const g = State.groups.find(x => x.id === groupId);
+    if (!g || !g.tasks.length) { toast('请先添加子任务', 'warn'); return; }
+    if (State.mode !== 'tasks') State.mode = 'tasks';
+    State.group.active = true;
+    State.group.groupId = g.id;
+    State.group.tasks = g.tasks;  // 引用，编辑后实时生效
+    // 决定起始子任务：优先 activeTaskId（如果属于该组），否则从第一项
+    let startIdx = 0;
+    if (State.activeTaskId) {
+      const idx = g.tasks.findIndex(x => x.id === State.activeTaskId);
+      if (idx >= 0) startIdx = idx;
+    }
+    State.group.currentIndex = startIdx;
+    State.group.overtime = false;
+    // 前面 task 的累计清空（已经被跳过的）
+    g.tasks.forEach((t, i) => { if (i < startIdx) delete State.actualTimes[t.id]; });
+    const startTask = State.group.tasks[startIdx];
+    State.activeTaskId = startTask.id;
+    // 不动 State.countdown（保持普通倒计时独立）
+    State.group.lastTick = performance.now();
+    State.group.running = true;
+    const elapsed = State.actualTimes[startTask.id] || 0;
+    State.group.itemRemaining = Math.max(0, startTask.standard - elapsed);
+    State.group.itemDuration = startTask.standard;
+    State.group.overtime = elapsed >= startTask.standard;
+    render();
+    save();
+    const prefix = startIdx > 0 ? `（第 ${startIdx + 1} 项开始）` : '';
+    toast(`开始：${g.name} · ${startTask.name}${prefix}`, 'success');
+  }
+
+  // 切换到指定 task（保留 actualTimes 累计）
+  // 支持跨组：如果 task 不在当前组，切换 group
+  // 切项后默认暂停（让用户主动点 ▶ 继续）
+  function switchToTask(taskId) {
+    const found = findTask(taskId);
+    if (!found) return;
+    const t = found.task;
+
+    // 跨组：切换到新组
+    if (!State.group.active || State.group.groupId !== found.group.id) {
+      if (State.mode !== 'tasks') State.mode = 'tasks';
+      State.group.active = true;
+      State.group.groupId = found.group.id;
+      State.group.tasks = found.group.tasks;  // 引用
+    }
+
+    const idx = State.group.tasks.findIndex(x => x.id === taskId);
+    if (idx < 0) return;
+    State.group.currentIndex = idx;
+    State.activeTaskId = taskId;
+    State.countdown.duration = t.standard;
+    // 关键：remaining = standard - 累计用时 (actualTimes 保留)
+    const elapsed = State.actualTimes[t.id] || 0;
+    State.countdown.remaining = Math.max(0, t.standard - elapsed);
+    State.countdown.finished = false;
+    State.group.overtime = elapsed >= t.standard;
+    // 任务组独立的 itemRemaining/itemDuration：切项后必须立即同步新子任务的时间
+    State.group.itemDuration = t.standard;
+    State.group.itemRemaining = Math.max(0, t.standard - elapsed);
+    // 切项后默认暂停（让用户主动点 ▶ 继续）
+    State.group.running = false;
+    State.countdown.running = false;
+    State.group.lastTick = 0;
+    render();
+    save();
+  }
+
+  function nextTask() {
+    // 未启动时：找到当前 activeTaskId 所属组，跳到下一项（选但不启动）
+    if (!State.group.active) {
+      if (!State.activeTaskId) { toast('请先选中一个任务组', 'warn'); return; }
+      const found = findTask(State.activeTaskId);
+      if (!found) return;
+      const idx = found.group.tasks.findIndex(x => x.id === State.activeTaskId);
+      if (idx < 0) return;
+      const next = found.group.tasks[idx + 1];
+      if (next) { selectTask(next.id); return; }
+      // 已到最后一项：直接启动当前组（从 curIdx=0 开始）
+      startGroup(found.group.id);
+      return;
+    }
+    const isLast = State.group.currentIndex >= State.group.tasks.length - 1;
+    if (isLast) {
+      // 最后一项：完成全部
+      onGroupComplete();
+      return;
+    }
+    const nextIdx = State.group.currentIndex + 1;
+    const next = State.group.tasks[nextIdx];
+    switchToTask(next.id);
+    toast(`→ ${next.name}`);
+  }
+  function prevTask() {
+    if (!State.group.active) {
+      if (!State.activeTaskId) { toast('请先选中一个任务组', 'warn'); return; }
+      const found = findTask(State.activeTaskId);
+      if (!found) return;
+      const idx = found.group.tasks.findIndex(x => x.id === State.activeTaskId);
+      if (idx <= 0) return;
+      const prev = found.group.tasks[idx - 1];
+      if (prev) selectTask(prev.id);
+      return;
+    }
+    if (State.group.currentIndex <= 0) return;  // 端头保护
+    const prevIdx = State.group.currentIndex - 1;
+    const prev = State.group.tasks[prevIdx];
+    switchToTask(prev.id);
+    toast(`← ${prev.name}`);
+  }
+  function onGroupComplete() {
+    // 记录当前项后停止
+    if (State.group.startTs > 0) {
+      const elapsed = (performance.now() - State.group.startTs) / 1000;
+      const cur = State.group.tasks[State.group.currentIndex];
+      if (cur) State.actualTimes[cur.id] = elapsed;
+    }
+    State.group.active = false;
+    State.group.groupId = null;
+    State.group.tasks = [];
+    State.group.currentIndex = 0;
+    State.group.overtime = false;
+    State.group.lastTick = 0;
+    State.countdown.running = false;
+    beep([523, 0.2, 0, 0.1, 659, 0.2, 0, 0.1, 784, 0.2, 0, 0.1, 1047, 0.6]);
+    toast('🎉 全部完成！', 'success');
+    render();
+    save();
+  }
+
+  // 结束全部（停止任务组）
+  function stopGroup() {
+    if (State.group.active) beep([523, 0.2, 0, 0.1, 659, 0.4]);
+    State.group.active = false;
+    State.group.groupId = null;
+    // queue 是 tasks 引用，不需要清空
+    State.group.currentIndex = 0;
+    State.group.overtime = false;
+    State.group.lastTick = 0;
+    State.countdown.running = false;
+    toast('已结束全部');
+    render();
+    save();
+  }
+
+  function clearAllActuals() {
+    if (!confirm('确定清空所有任务的实际用时记录？')) return;
+    State.actualTimes = {};
+    render();
+    save();
+    toast('已清空');
+  }
+
+  // ============== 单次任务（从组里点击子任务，未启动组） ==============
+  function selectTask(taskId) {
+    // 未启动：仅预览（设 activeTaskId + cd 状态），不激活 group
+    if (!State.group.active) {
+      const found = findTask(taskId);
+      if (!found) return;
+      State.activeTaskId = taskId;
+      State.countdown.duration = found.task.standard;
+      State.countdown.remaining = found.task.standard;
+      State.countdown.finished = false;
+      State.countdown.running = false;
+      setCountdownInput(found.task.standard);
+      render();
+      save();
+      return;
+    }
+    // 运行中：跳到任意项
+    if (State.group.tasks[State.group.currentIndex]?.id === taskId) return;
+    switchToTask(taskId);
+  }
+
+  function selectGroup(groupId) {
+    if (State.group.active) { toast('任务组进行中，请先停止', 'warn'); return; }
+    const g = State.groups.find(x => x.id === groupId);
+    if (!g) return;
+    if (State.mode !== 'tasks') State.mode = 'tasks';
+    if (g.tasks.length) {
+      const first = g.tasks[0];
+      State.activeTaskId = first.id;
+      setCountdownInput(first.standard);
+      State.countdown.duration = first.standard;
+      State.countdown.remaining = first.standard;
+    } else {
+      State.activeTaskId = null;
+    }
+    State.countdown.running = false;
+    State.countdown.finished = false;
+    render();
+    save();
+  }
+
+  // 轮转切换任务组（↑/↓、PgUp/PgDn）
+  function shiftGroup(offset) {
+    if (!State.groups.length) return;
+    if (State.group.active) { toast('任务组进行中，请先停止', 'warn'); return; }
+    // 当前组：优先 State.group.groupId（后才用 activeTaskId 推断）
+    let curId = State.group.groupId;
+    if (!curId && State.activeTaskId) {
+      const t = State.groups.flatMap(g => g.tasks).find(x => x.id === State.activeTaskId);
+      if (t) curId = State.groups.find(g => g.tasks.includes(t))?.id;
+    }
+    let idx = curId ? State.groups.findIndex(g => g.id === curId) : -1;
+    const n = State.groups.length;
+    let newIdx;
+    if (idx < 0) {
+      newIdx = offset > 0 ? 0 : n - 1;  // 未选中：↓ 跳第一个，↑ 跳最后一个
+    } else {
+      newIdx = (idx + offset + n) % n;  // 循环
+    }
+    selectGroup(State.groups[newIdx].id);
+  }
+
+  // ============== 秒表 ==============
+  function startStopwatch() {
+    if (State.stopwatch.running) {
+      State.stopwatch.elapsed += performance.now() - State.stopwatch.startedAt;
+      State.stopwatch.running = false;
+    } else {
+      State.stopwatch.startedAt = performance.now();
+      State.stopwatch.running = true;
+      State.stopwatch.lapWhilePaused = false;  // 恢复运行后允许再次暂停分段
+    }
+    render();
+  }
+  function resetStopwatch() {
+    State.stopwatch.running = false;
+    State.stopwatch.elapsed = 0;
+    State.stopwatch.laps = [];
+    State.stopwatch.lapWhilePaused = false;
+    render();
+  }
+  function lapStopwatch() {
+    // 运行中：直接分段
+    if (State.stopwatch.running) {
+      const t = State.stopwatch.elapsed + (performance.now() - State.stopwatch.startedAt);
+      State.stopwatch.laps.push(t);
+      render();
+      return;
+    }
+    // 暂停态：允许一次分段（防止反复分同一时段没意义）
+    if (State.stopwatch.elapsed > 0 && !State.stopwatch.lapWhilePaused) {
+      State.stopwatch.laps.push(State.stopwatch.elapsed);
+      State.stopwatch.lapWhilePaused = true;
+      render();
+    }
+  }
+  function tickStopwatch() {
+    // 不需操作 state，由 mainLoop render 更新 UI
+  }
+  function getStopwatchDisplayMs() {
+    if (State.stopwatch.running) {
+      return State.stopwatch.elapsed + (performance.now() - State.stopwatch.startedAt);
+    }
+    return State.stopwatch.elapsed;
+  }
+
+  // ============== 模态框：组/任务编辑 ==============
+  // 导出二级菜单
+  function openExportPopover(anchor, groupId) {
+    const pop = document.getElementById('export-popover');
+    pop.dataset.groupId = groupId;
+    pop.classList.add('show');
+    // 定位在按钮下方
+    const r = anchor.getBoundingClientRect();
+    const popW = 160;  // 估算
+    let left = r.right - popW;
+    let top = r.bottom + 4;
+    if (left < 8) left = 8;
+    if (left + popW > window.innerWidth - 8) left = window.innerWidth - popW - 8;
+    if (top + 80 > window.innerHeight) top = r.top - 80 - 4;  // 上面空间不够则跳上
+    pop.style.left = left + 'px';
+    pop.style.top = top + 'px';
+  }
+  function closeExportPopover() {
+    const pop = document.getElementById('export-popover');
+    pop.classList.remove('show');
+    delete pop.dataset.groupId;
+  }
+
+  function openGroupModal(group = null) {
+    State._editing = { type: 'group', groupId: group?.id || null, draft: group ? group.tasks.map(t => ({...t})) : [] };
+    document.getElementById('modal-title').textContent = group ? '编辑任务组' : '新建任务组';
+    document.getElementById('form-name').value = group?.name || '';
+    document.getElementById('form-tasks-row').style.display = 'block';
+    renderFormTasks();
+    document.getElementById('modal-bg').classList.add('show');
+    document.getElementById('form-name').focus();
+  }
+  function renderFormTasks() {
+    const list = document.getElementById('form-tasks-list');
+    list.innerHTML = '';
+    State._editing.draft.forEach((t, i) => {
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;gap:6px;align-items:center;margin-bottom:6px';
+      const isFirst = i === 0;
+      const isLast = i === State._editing.draft.length - 1;
+      row.innerHTML = `
+        <div style="display:flex;flex-direction:column;gap:2px">
+          <button type="button" data-mv="up" data-idx="${i}" style="padding:2px 6px;background:var(--bg-elev-2);color:var(--text-dim);border-radius:3px;font-size:10px;line-height:1" ${isFirst ? 'disabled' : ''} title="上移">↑</button>
+          <button type="button" data-mv="down" data-idx="${i}" style="padding:2px 6px;background:var(--bg-elev-2);color:var(--text-dim);border-radius:3px;font-size:10px;line-height:1" ${isLast ? 'disabled' : ''} title="下移">↓</button>
+        </div>
+        <input class="form-input" data-field="name" data-idx="${i}" value="${escapeHtml(t.name)}" placeholder="子任务名" style="flex:2">
+        <div class="time-cell" style="flex:1">
+          <input class="form-input" data-field="h" data-idx="${i}" type="number" min="0" max="99" value="${Math.floor(t.standard/3600)}" style="width:100%;padding-right:22px;text-align:center">
+          <span class="time-unit">时</span>
+        </div>
+        <span style="color:var(--text-faint)">:</span>
+        <div class="time-cell" style="flex:1">
+          <input class="form-input" data-field="m" data-idx="${i}" type="number" min="0" max="59" value="${Math.floor((t.standard%3600)/60)}" style="width:100%;padding-right:22px;text-align:center">
+          <span class="time-unit">分</span>
+        </div>
+        <span style="color:var(--text-faint)">:</span>
+        <div class="time-cell" style="flex:1">
+          <input class="form-input" data-field="s" data-idx="${i}" type="number" min="0" max="59" value="${t.standard%60}" style="width:100%;padding-right:22px;text-align:center">
+          <span class="time-unit">秒</span>
+        </div>
+        <button type="button" data-rm="${i}" style="padding:6px 8px;color:var(--warn);background:transparent">×</button>
+      `;
+      list.appendChild(row);
+    });
+    // 事件
+    list.querySelectorAll('input').forEach(inp => {
+      inp.addEventListener('input', () => {
+        const i = +inp.dataset.idx, f = inp.dataset.field;
+        if (f === 'name') State._editing.draft[i].name = inp.value;
+        else {
+          const h = +list.querySelector(`[data-field="h"][data-idx="${i}"]`).value || 0;
+          const m = +list.querySelector(`[data-field="m"][data-idx="${i}"]`).value || 0;
+          const s = +list.querySelector(`[data-field="s"][data-idx="${i}"]`).value || 0;
+          State._editing.draft[i].standard = h*3600 + m*60 + s;
+        }
+      });
+    });
+    list.querySelectorAll('[data-rm]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        State._editing.draft.splice(+btn.dataset.rm, 1);
+        renderFormTasks();
+      });
+    });
+    // ↑↓ 调子任务顺序
+    list.querySelectorAll('[data-mv]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const i = +btn.dataset.idx;
+        const dir = btn.dataset.mv === 'up' ? -1 : 1;
+        const j = i + dir;
+        if (j < 0 || j >= State._editing.draft.length) return;
+        const tmp = State._editing.draft[i];
+        State._editing.draft[i] = State._editing.draft[j];
+        State._editing.draft[j] = tmp;
+        renderFormTasks();
+      });
+    });
+  }
+  function closeModal() {
+    document.getElementById('modal-bg').classList.remove('show');
+    State._editing = null;
+  }
+  function saveGroup() {
+    const name = document.getElementById('form-name').value.trim();
+    if (!name) { toast('请输入组名', 'warn'); return; }
+    const draft = State._editing.draft.filter(t => t.name.trim() && t.standard > 0);
+    if (draft.length === 0) { toast('请至少添加一个子任务', 'warn'); return; }
+    if (State._editing.groupId) {
+      const g = State.groups.find(x => x.id === State._editing.groupId);
+      g.name = name;
+      g.tasks = draft.map(t => ({ id: t.id || uid(), name: t.name, standard: t.standard }));
+      toast('已更新', 'success');
+    } else {
+      State.groups.push({ id: uid(), name, tasks: draft.map(t => ({ id: uid(), name: t.name, standard: t.standard })) });
+      toast('已新建', 'success');
+    }
+    closeModal();
+    save();
+    render();
+  }
+  function deleteGroup(id) {
+    const g = State.groups.find(x => x.id === id);
+    if (!g) return;
+    if (!confirm(`确定删除"${g.name}"及其所有子任务？`)) return;
+    State.groups = State.groups.filter(x => x.id !== id);
+    g.tasks.forEach(t => { delete State.actualTimes[t.id]; });
+    if (State.group.groupId === id) stopGroup(true);
+    save();
+    render();
+  }
+  function deleteTask(taskId) {
+    const found = findTask(taskId);
+    if (!found) return;
+    if (!confirm(`确定删除"${found.task.name}"？`)) return;
+    found.group.tasks = found.group.tasks.filter(t => t.id !== taskId);
+    delete State.actualTimes[taskId];
+    if (State.activeTaskId === taskId) State.activeTaskId = null;
+    save();
+    render();
+  }
+  function moveTask(groupId, taskId, dir) {
+    const g = State.groups.find(x => x.id === groupId);
+    if (!g) return;
+    const i = g.tasks.findIndex(t => t.id === taskId);
+    if (i < 0) return;
+    const j = i + dir;
+    if (j < 0 || j >= g.tasks.length) return;
+    [g.tasks[i], g.tasks[j]] = [g.tasks[j], g.tasks[i]];
+    save();
+    render();
+  }
+
+  // ============== 事件 ==============
+  function bind() {
+    // Tabs
+    document.querySelectorAll('.tab').forEach(t => {
+      t.addEventListener('click', () => setMode(t.dataset.tab));
+    });
+
+    document.getElementById('btn-fullscreen').addEventListener('click', toggleFullscreen);
+    document.getElementById('btn-toggle-right').addEventListener('click', toggleRightPanel);
+    document.getElementById('btn-theme').addEventListener('click', () => {
+      const cur = document.documentElement.dataset.theme;
+      const next = cur === 'dark' ? 'light' : 'dark';
+      applyTheme(next, true);
+    });
+    document.getElementById('btn-help').addEventListener('click', () => {
+      alert(`计时器
+
+模式：
+  倒计时 
+  秒表    
+  任务   - 按序执行多个倒计时
+
+快捷键：
+  F / F11      - 全屏
+  空格         - 开始 / 暂停
+  L            - 秒表分段
+  1 / 2 / 3    - 切换模式（倒计时/秒表/任务）
+  \\           - 展开/收起边栏
+
+  任务组中：
+  ← / Home / P  - 上一项
+  → / End / N   - 下一项
+  ↑ / PageUp    - 上个任务组（循环）
+  ↓ / PageDown  - 下个任务组（循环）`);
+    });
+
+    // ===== 倒计时控件 =====
+    document.getElementById('btn-start').addEventListener('click', () => {
+      startCountdown();
+    });
+    document.getElementById('btn-reset').addEventListener('click', () => {
+      resetCountdown(true);
+    });
+
+    // ===== 秒表控件 =====
+    document.getElementById('btn-start-sw').addEventListener('click', startStopwatch);
+    document.getElementById('btn-lap').addEventListener('click', () => {
+      // 右栏收起时，点“分段”先弹回右栏（分段信息在右栏里）
+      if (document.getElementById('main').classList.contains('right-collapsed')) {
+        toggleRightPanel();
+      }
+      lapStopwatch();
+    });
+    document.getElementById('btn-reset-sw').addEventListener('click', () => {
+      if (State.stopwatch.elapsed === 0 && State.stopwatch.laps.length === 0) return;
+      resetStopwatch();
+    });
+
+    // ===== 任务组 banner 点击 =====
+    document.getElementById('group-banner').addEventListener('click', () => {
+      if (State.mode !== 'tasks') setMode('tasks');
+      // 如果右栏收起，展开
+      if (document.getElementById('main').classList.contains('right-collapsed')) {
+        toggleRightPanel();
+      }
+    });
+
+    // ===== 任务组控件 =====
+    document.getElementById('btn-start-grp').addEventListener('click', () => {
+      if (!State.group.active) {
+        // 未运行：启动当前选中的组，或第一个组
+        if (State.activeTaskId) {
+          const found = findTask(State.activeTaskId);
+          if (found) { startGroup(found.group.id); return; }
+        }
+        if (State.groups.length) startGroup(State.groups[0].id);
+        else toast('请先创建一个任务组', 'warn');
+        return;
+      }
+      // 运行中：暂停/继续（任务组独立暂停，不影响普通倒计时）
+      if (State.group.running) {
+        State.group.running = false;
+      } else {
+        State.group.running = true;
+        State.group.lastTick = performance.now();
+      }
+      render();
+      save();
+    });
+    document.getElementById('btn-prev-task').addEventListener('click', prevTask);
+    document.getElementById('btn-next-task').addEventListener('click', nextTask);
+    document.getElementById('btn-stop-group').addEventListener('click', stopGroup);
+
+    // 导出：格式切换
+    document.querySelectorAll('.export-format-row').forEach(row => {
+      row.addEventListener('click', e => {
+        const btn = e.target.closest('.export-format-btn');
+        if (!btn) return;
+        row.querySelectorAll('.export-format-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+      });
+    });
+    // 导出：秒表
+    document.getElementById('btn-export-sw').addEventListener('click', () => {
+      const fmt = document.querySelector('#sw-format-row .export-format-btn.active').dataset.format;
+      exportStopwatch(fmt);
+    });
+    // 导出：group-item 上的"📊 导出"按钮（hover 显现）→ 点开二级菜单
+    document.getElementById('group-list').addEventListener('click', e => {
+      const btn = e.target.closest('[data-action="export-group"]');
+      if (!btn) return;
+      e.stopPropagation();
+      const groupItem = btn.closest('.group-item');
+      if (!groupItem) return;
+      const groupId = groupItem.dataset.groupId;
+      openExportPopover(btn, groupId);
+    });
+    // 二级菜单选项 click
+    document.getElementById('export-popover').addEventListener('click', e => {
+      const item = e.target.closest('.export-popover-item');
+      if (!item) return;
+      const groupId = document.getElementById('export-popover').dataset.groupId;
+      const fmt = item.dataset.format;
+      closeExportPopover();
+      if (groupId) exportGroup(groupId, fmt);
+    });
+    // 点击其他位置关闭 popover
+    document.addEventListener('click', e => {
+      const pop = document.getElementById('export-popover');
+      if (!pop.classList.contains('show')) return;
+      if (e.target.closest('#export-popover') || e.target.closest('[data-action="export-group"]')) return;
+      closeExportPopover();
+    });
+
+    // pills 点击跳转
+    document.getElementById('group-pills').addEventListener('click', e => {
+      const pill = e.target.closest('.group-pill');
+      if (pill && pill.dataset.taskId) switchToTask(pill.dataset.taskId);
+    });
+
+    // 输入
+    ['in-h', 'in-m', 'in-s'].forEach(id => {
+      document.getElementById(id).addEventListener('input', () => {
+        if (!State.countdown.running && !State.countdown.finished && !State.group.active) {
+          const secs = getInputSeconds();
+          State.countdown.remaining = secs;
+          State.countdown.duration = secs;
+          render();
+          save();
+        }
+      });
+    });
+
+    // 快捷时长（与任务组完全独立：可同时跑）
+    document.querySelectorAll('.quick-time-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const sec = btn.dataset.sec ? parseInt(btn.dataset.sec) : parseInt(btn.dataset.min) * 60;
+        setCountdownInput(sec);
+        State.countdown.remaining = sec;
+        State.countdown.duration = sec;
+        State.activeTaskId = null;
+        State.countdown.running = false;  // 重置，倒计时需要点“开始”才跑
+        render();
+        save();
+      });
+    });
+
+    // 自定义快捷时长：添加（与任务组完全独立）
+    document.getElementById('custom-add-btn').addEventListener('click', () => {
+      const m = parseInt(document.getElementById('custom-m').value) || 0;
+      const s = parseInt(document.getElementById('custom-s').value) || 0;
+      const secs = m * 60 + s;
+      if (secs <= 0) { toast('请输入有效的时长', 'warn'); return; }
+      // 去重
+      if (!State.customQuicks.some(c => c.secs === secs)) {
+        State.customQuicks.push({ id: uid(), secs });
+        State.customQuicks.sort((a, b) => a.secs - b.secs);
+        save();
+        renderCustomQuicks();
+      }
+    });
+    // 自定义快捷时长：点击应用
+    document.getElementById('custom-quick-list').addEventListener('click', e => {
+      const delBtn = e.target.closest('[data-custom-del]');
+      const useBtn = e.target.closest('[data-custom-use]');
+      if (delBtn) {
+        e.stopPropagation();
+        const id = delBtn.dataset.customDel;
+        State.customQuicks = State.customQuicks.filter(c => c.id !== id);
+        save();
+        renderCustomQuicks();
+        return;
+      }
+      if (useBtn) {
+        const secs = parseInt(useBtn.dataset.customUse);
+        setCountdownInput(secs);
+        State.countdown.remaining = secs;
+        State.countdown.duration = secs;
+        State.activeTaskId = null;
+        State.countdown.running = false;
+        render();
+        save();
+      }
+    });
+
+    // 新建组
+    document.getElementById('add-group-btn').addEventListener('click', () => openGroupModal());
+    document.getElementById('form-add-task').addEventListener('click', () => {
+      State._editing.draft.push({ id: uid(), name: '', standard: 0 });
+      renderFormTasks();
+    });
+    document.getElementById('modal-cancel').addEventListener('click', closeModal);
+    document.getElementById('modal-save').addEventListener('click', saveGroup);
+    document.getElementById('modal-bg').addEventListener('click', e => {
+      if (e.target.id === 'modal-bg') closeModal();
+    });
+    document.getElementById('form-name').addEventListener('keydown', e => {
+      if (e.key === 'Enter') saveGroup();
+      if (e.key === 'Escape') closeModal();
+    });
+
+    // 组/任务列表事件委托
+    document.getElementById('group-list').addEventListener('click', e => {
+      const btn = e.target.closest('button');
+      const groupItem = e.target.closest('.group-item');
+      const taskEl = e.target.closest('.group-task');
+      const addTaskRow = e.target.closest('.add-task-row');
+      const head = e.target.closest('.group-head');
+
+      // ↑↓ 调子任务顺序（不依赖 data-action 委托）
+      const mvBtn = e.target.closest('[data-mv]');
+      if (mvBtn && taskEl) {
+        e.stopPropagation();
+        if (State.group.active) { toast('任务组进行中，请先停止', 'warn'); return; }
+        const idx = +mvBtn.dataset.idx;
+        const dir = mvBtn.dataset.mv === 'up' ? -1 : 1;
+        const j = idx + dir;
+        const g = State.groups.find(x => x.id === groupItem.dataset.groupId);
+        if (g && j >= 0 && j < g.tasks.length) {
+          [g.tasks[idx], g.tasks[j]] = [g.tasks[j], g.tasks[idx]];
+          save();
+          render();
+        }
+        return;
+      }
+
+      if (btn && btn.dataset.action) {
+        e.stopPropagation();
+        const action = btn.dataset.action;
+        if (action === 'play-group' && groupItem) {
+          // 另一任务组在跑：不允许启动
+          if (State.group.active) { toast('任务组进行中，请先停止', 'warn'); return; }
+          startGroup(groupItem.dataset.groupId);
+        }
+        else if (action === 'edit-group' && groupItem) {
+          const g = State.groups.find(x => x.id === groupItem.dataset.groupId);
+          openGroupModal(g);
+        } else if (action === 'del-group' && groupItem) deleteGroup(groupItem.dataset.groupId);
+        else if (action === 'edit-task' && taskEl) {
+          const found = findTask(taskEl.dataset.taskId);
+          if (found) openGroupModal(found.group);
+        } else if (action === 'del-task' && taskEl) deleteTask(taskEl.dataset.taskId);
+      } else if (taskEl) {
+        selectTask(taskEl.dataset.taskId);
+      } else if (addTaskRow && groupItem) {
+        const g = State.groups.find(x => x.id === groupItem.dataset.groupId);
+        openGroupModal(g);
+      } else if (head && groupItem && !addTaskRow) {
+        // 点击组 header（不是按钮、不是 head-row2 操作区）：仅选中该组
+        // 只在 head-row1（名称/统计）或 head 空白处才触发
+        if (e.target.classList.contains('group-name') ||
+            e.target.classList.contains('group-stats') ||
+            e.target.classList.contains('group-head-row1') ||
+            e.target === head) {
+          selectGroup(groupItem.dataset.groupId);
+        }
+      }
+    });
+
+    // 键盘
+    document.addEventListener('keydown', e => {
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+      if (e.ctrlKey || e.metaKey || e.altKey) return;  // 不抢浏览器/Ctrl 组合
+      if (e.key === 'f' || e.key === 'F' || e.key === 'F11') {
+        e.preventDefault();
+        toggleFullscreen();
+      } else if (e.key === '\\') {
+        e.preventDefault();
+        toggleRightPanel();
+      } else if (e.key === ' ') {
+        e.preventDefault();
+        // 空格按当前 mode 启动/暂停对应的计时器
+        if (State.mode === 'countdown') document.getElementById('btn-start').click();
+        else if (State.mode === 'stopwatch') document.getElementById('btn-start-sw').click();
+        else if (State.mode === 'tasks') document.getElementById('btn-start-grp').click();
+      } else if (e.key === 'l' || e.key === 'L') {
+        document.getElementById('btn-lap').click();
+      } else if (e.key === 'n' || e.key === 'N' || e.key === 'ArrowRight' || e.key === 'End') {
+        if (State.mode === 'tasks' && State.group.active) document.getElementById('btn-next-task').click();
+      } else if (e.key === 'p' || e.key === 'P' || e.key === 'ArrowLeft' || e.key === 'Home') {
+        if (State.mode === 'tasks' && State.group.active) document.getElementById('btn-prev-task').click();
+      } else if (e.key === 'ArrowUp' || e.key === 'PageUp') {
+        if (State.mode === 'tasks') shiftGroup(-1);
+      } else if (e.key === 'ArrowDown' || e.key === 'PageDown') {
+        if (State.mode === 'tasks') shiftGroup(1);
+      } else if (e.key === '1') setMode('countdown');
+      else if (e.key === '2') setMode('stopwatch');
+      else if (e.key === '3') setMode('tasks');
+    });
+  }
+
+  function toggleFullscreen() {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen?.().catch(e => toast('全屏失败：' + e.message, 'warn'));
+    } else {
+      document.exitFullscreen?.();
+    }
+  }
+
+  // 右栏折叠/展开（所有 mode 都生效）
+  function toggleRightPanel() {
+    const main = document.getElementById('main');
+    const btn = document.getElementById('btn-toggle-right');
+    const collapsed = main.classList.toggle('right-collapsed');
+    btn.textContent = collapsed ? '◀' : '▶';
+    btn.title = collapsed ? '显示右栏 (\\)' : '隐藏右栏 (\\)';
+    try { localStorage.setItem('right-collapsed', collapsed ? '1' : '0'); } catch (e) {}
+  }
+
+  // ============== 时钟 + 主循环 ==============
+  function clockTick() {
+    const now = new Date();
+    const pad = n => String(n).padStart(2, '0');
+    document.getElementById('clock-time').textContent = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+    const days = ['日','一','二','三','四','五','六'];
+    document.getElementById('clock-date').textContent = `${now.getFullYear()}年${now.getMonth()+1}月${now.getDate()}日 星期${days[now.getDay()]}`;
+  }
+  function mainLoop() {
+    tickCountdown();
+    updateLive();
+    updateGroupActuals();
+    requestAnimationFrame(mainLoop);
+  }
+
+  // 高频更新任务组用时文本（不重渲染右栏）
+  function updateGroupActuals() {
+    if (!State.group.active && !hasAnyActual()) return;
+    // 各子任务的实际用时（0.1 秒精度，流畅变化）
+    const items = document.querySelectorAll('.group-task[data-task-id]');
+    items.forEach(item => {
+      const id = item.dataset.taskId;
+      const actualEl = item.querySelector('.group-task-actual');
+      if (!actualEl) return;
+      const a = State.actualTimes[id];
+      if (a === undefined) {
+        actualEl.textContent = '--:--';
+      } else {
+        actualEl.textContent = fmtTime(a);
+      }
+    });
+    // 同步 .group-summary 的“实际 / 差异”（在 group-item 内部）
+    document.querySelectorAll('.group-summary[data-group-id]').forEach(box => {
+      const gid = box.dataset.groupId;
+      const g = State.groups.find(x => x.id === gid);
+      if (!g) return;
+      let stdTotal = 0, actTotal = 0;
+      g.tasks.forEach(t => {
+        stdTotal += t.standard;
+        actTotal += (State.actualTimes[t.id] || 0);
+      });
+      const actualEl = box.querySelector('.summary-actual');
+      const diffEl = box.querySelector('.summary-diff');
+      if (actualEl) actualEl.textContent = actTotal > 0 ? fmtTime(actTotal) : '--';
+      if (diffEl) {
+        const diff = actTotal - stdTotal;
+        if (actTotal < 0.05) {
+          diffEl.textContent = '—';
+          diffEl.className = 'summary-value summary-diff';
+        } else if (Math.abs(diff) < 0.1) {
+          diffEl.textContent = '± 0.0';
+          diffEl.className = 'summary-value summary-diff';
+        } else {
+          const sign = diff > 0 ? '+' : '−';
+          diffEl.textContent = `${sign} ${fmtTime(Math.abs(diff))}`;
+          diffEl.className = 'summary-value summary-diff ' + (diff > 0 ? 'diff-over' : 'diff-under');
+        }
+      }
+    });
+  }
+  function hasAnyActual() {
+    for (const k in State.actualTimes) {
+      if (State.actualTimes[k] > 0) return true;
+    }
+    return false;
+  }
+  // 续点提示逻辑
+  function showResumePromptIfNeeded() {
+    if (hasAnyActual()) {
+      document.getElementById('modal-bg-resume').classList.add('show');
+    }
+  }
+  // 绑定续点提示按钮
+  document.getElementById('btn-resume-keep').addEventListener('click', () => {
+    document.getElementById('modal-bg-resume').classList.remove('show');
+    // 刷新前 group/countdown 状态已由 load 恢复（默认暂停），切到 tasks 模式后
+    // 重新绑定 group.tasks 引用 + 重算 itemRemaining（防止 taskId 重生后标准值/累加值已变）
+    if (State.group.active && State.group.groupId) {
+      const g = State.groups.find(x => x.id === State.group.groupId);
+      if (g && g.tasks.length) {
+        State.group.tasks = g.tasks;
+        State.group.currentIndex = Math.min(State.group.currentIndex, g.tasks.length - 1);
+        const cur = g.tasks[State.group.currentIndex];
+        if (cur) {
+          State.group.itemDuration = cur.standard;
+          const elapsed = State.actualTimes[cur.id] || 0;
+          State.group.itemRemaining = Math.max(0, cur.standard - elapsed);
+          State.group.overtime = elapsed >= cur.standard;
+          State.activeTaskId = cur.id;
+        }
+      }
+    }
+    if (State.mode !== 'tasks') setMode('tasks');
+    else render();
+    save();
+  });
+  document.getElementById('btn-resume-clear').addEventListener('click', () => {
+    State.actualTimes = {};
+    State.group.groupId = null;
+    State.group.active = false;
+    State.group.running = false;
+    State.group.currentIndex = 0;
+    State.group.overtime = false;
+    State.group.itemRemaining = 0;
+    State.group.itemDuration = 0;
+    State.activeTaskId = null;
+    State.countdown.remaining = 0;
+    State.countdown.running = false;
+    document.getElementById('modal-bg-resume').classList.remove('show');
+    if (State.mode !== 'tasks') setMode('tasks');
+    else { render(); save(); }
+  });
+
+  // 高频更新：只动需要动的小区域（避免整个 DOM 重建）
+  function updateLive() {
+    // 倒计时 / 任务组模式的实际用时、倒计时数字、overtime
+    if (State.mode === 'countdown' || State.mode === 'tasks') {
+      const timeEl = document.getElementById('display-time');
+      const progress = document.getElementById('progress');
+      const progressBar = document.getElementById('progress-bar');
+      // tasks tab：使用任务组独立的 itemRemaining 渲染（与倒计时完全隔离）
+      if (State.mode === 'tasks' && State.group.active) {
+        timeEl.innerHTML = fmtTime(State.group.itemRemaining);
+        let timeCls = 'display-time';
+        if (State.group.overtime) timeCls += ' overtime-running';
+        else if (State.group.itemRemaining < 10 && State.group.itemRemaining > 0) timeCls += ' warn';
+        if (!State.group.running) timeCls += ' paused';
+        timeEl.className = timeCls;
+        if (State.group.itemDuration > 0 && progress.style.display !== 'none') {
+          const rawPct = ((State.group.itemDuration - State.group.itemRemaining) / State.group.itemDuration) * 100;
+          progressBar.style.width = Math.min(100, rawPct) + '%';
+        }
+      }
+      // countdown tab：使用普通倒计时的 remaining（与任务组完全隔离）
+      else if (State.countdown.running) {
+        timeEl.innerHTML = fmtTime(State.countdown.remaining);
+        let timeCls = 'display-time';
+        if (State.countdown.remaining < 10 && State.countdown.remaining > 0) timeCls += ' warn';
+        timeEl.className = timeCls;
+        if (State.countdown.duration > 0 && progress.style.display !== 'none') {
+          const rawPct = ((State.countdown.duration - State.countdown.remaining) / State.countdown.duration) * 100;
+          progressBar.style.width = Math.min(100, rawPct) + '%';
+        }
+      }
+      // countdown tab 暂停中：保持进度条按已完成比例显示
+      else if (State.countdown.remaining > 0 && State.countdown.remaining < State.countdown.duration && !State.countdown.finished) {
+        timeEl.innerHTML = fmtTime(State.countdown.remaining);
+        timeEl.className = 'display-time paused';
+        if (State.countdown.duration > 0) {
+          progress.style.display = 'block';
+          const usedPct = ((State.countdown.duration - State.countdown.remaining) / State.countdown.duration) * 100;
+          progressBar.style.width = Math.min(100, usedPct) + '%';
+        }
+      }
+      // 任务组实际用时（仅在 tasks tab 显示）
+      if (State.group.active && State.mode === 'tasks') {
+        const actualEl = document.getElementById('display-actual');
+        const cur = State.group.tasks[State.group.currentIndex];
+        if (cur && State.actualTimes[cur.id] !== undefined) {
+          let cls = 'display-actual';
+          if (State.group.running) cls += ' live';
+          if (State.group.overtime) cls = 'display-actual overtime-val';
+          actualEl.textContent = `实际用时 ${fmtTime(State.actualTimes[cur.id])}`;
+          actualEl.className = cls;
+          actualEl.style.display = 'block';
+        }
+      } else {
+        // countdown / stopwatch tab：隐藏“实际用时”避免污染
+        const actualEl = document.getElementById('display-actual');
+        if (actualEl) actualEl.style.display = 'none';
+      }
+        // overtime 提示
+        if (State.group.overtime) {
+          const overEl = document.getElementById('display-overtime');
+          overEl.textContent = `⏱ 已超时 ${fmtTime(Math.max(0, -State.countdown.remaining))}`;
+          overEl.style.display = 'block';
+        }
+    }
+    // 任务组模式：更新开始/暂停按钮文字（用任务组独立的 running 标志）
+    if (State.mode === 'tasks' && State.group.active) {
+      const grpStart = document.getElementById('btn-start-grp');
+      const newText = State.group.running ? '⏸ 暂停' : (State.group.itemRemaining > 0 ? '▶ 继续' : '▶ 开始');
+      if (grpStart.textContent.trim() !== newText.replace(/[⏸▶]/g, '').trim()) {
+        grpStart.innerHTML = newText;
+        grpStart.classList.toggle('running', State.group.running);
+      }
+    }
+    // 倒计时模式：更新开始/暂停按钮文字
+    if (State.mode === 'countdown') {
+      const startBtn = document.getElementById('btn-start');
+      let newText;
+      if (State.countdown.finished) newText = '▶ 重新开始';
+      else if (State.countdown.running) newText = '⏸ 暂停';
+      else if (State.countdown.remaining < State.countdown.duration) newText = '▶ 继续';
+      else newText = '▶ 开始';
+      if (startBtn.textContent.trim() !== newText.replace(/[⏸▶]/g, '').trim()) {
+        startBtn.innerHTML = newText;
+        startBtn.classList.toggle('running', State.countdown.running);
+      }
+    }
+    // 秒表
+    if (State.mode === 'stopwatch') {
+      const swStart = document.getElementById('btn-start-sw');
+      let newText;
+      if (State.stopwatch.running) newText = '⏸ 暂停';
+      else if (State.stopwatch.elapsed > 0) newText = '▶ 继续';
+      else newText = '▶ 开始';
+      if (swStart.textContent.trim() !== newText.replace(/[⏸▶]/g, '').trim()) {
+        swStart.innerHTML = newText;
+        swStart.classList.toggle('running', State.stopwatch.running);
+      }
+      if (State.stopwatch.running) {
+        document.getElementById('display-time').innerHTML = fmtTimeMs(getStopwatchDisplayMs());
+      }
+    }
+  }
+
+  // ============== 启动 ==============
+  // 主题初始化：优先用户选择 > 跟随系统
+  function applyTheme(theme, userChose) {
+    document.documentElement.dataset.theme = theme;
+    if (userChose) localStorage.setItem('theme', theme);
+    const btn = document.getElementById('btn-theme');
+    if (btn) btn.textContent = theme === 'dark' ? '☀️' : '🌙';
+  }
+  (function initTheme() {
+    const stored = localStorage.getItem('theme');
+    if (stored === 'light' || stored === 'dark') {
+      applyTheme(stored);
+    } else {
+      const mql = window.matchMedia('(prefers-color-scheme: dark)');
+      applyTheme(mql.matches ? 'dark' : 'light');
+      mql.addEventListener('change', e => {
+        if (!localStorage.getItem('theme')) {
+          applyTheme(e.matches ? 'dark' : 'light');
+        }
+      });
+    }
+  })();
+
+  load();
+  bind();
+  clockTick();
+  setInterval(clockTick, 1000);
+  // 恢复右栏折叠状态
+  try {
+    if (localStorage.getItem('right-collapsed') === '1') {
+      document.getElementById('main').classList.add('right-collapsed');
+      const btn = document.getElementById('btn-toggle-right');
+      if (btn) { btn.textContent = '◀'; btn.title = '显示右栏 (\\)'; }
+    } else {
+      const btn = document.getElementById('btn-toggle-right');
+      if (btn) { btn.textContent = '▶'; btn.title = '隐藏右栏 (\\)'; }
+    }
+  } catch (e) {}
+  render();
+  mainLoop();
+  // 续点提示：加载后检测是否有未完成的 actualTimes
+  if (hasAnyActual()) {
+    document.getElementById('modal-bg-resume').classList.add('show');
+  }
+  </script>
+</body>
+</html>
